@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>會員｜大仁哥的珠寶小舖</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body data-page="member">
+  <a class="skip" href="#main">跳到主要內容</a>
+  <header id="site-header"></header>
+  <main class="wrap" id="main">
+    <h1>會員</h1>
+    <div id="guest-panel" class="split">
+      <form id="login-form" class="panel">
+        <h2>登入</h2>
+        <div id="login-alert" class="alert error" hidden></div>
+        <label class="field">電子郵件<input name="email" type="email" required autocomplete="email"></label>
+        <label class="field">密碼<input name="password" type="password" required autocomplete="current-password"></label>
+        <button class="btn" type="submit">登入</button>
+      </form>
+      <form id="register-form" class="panel">
+        <h2>註冊</h2>
+        <div id="register-alert" class="alert error" hidden></div>
+        <label class="field">姓名<input name="name" required maxlength="40" autocomplete="name"></label>
+        <label class="field">電子郵件<input name="email" type="email" required autocomplete="email"></label>
+        <label class="field">密碼<input name="password" type="password" required minlength="8" maxlength="72" autocomplete="new-password"></label>
+        <label class="field">電話（可空白）<input name="phone" maxlength="20" autocomplete="tel"></label>
+        <button class="btn" type="submit">建立帳號</button>
+      </form>
+    </div>
+    <section id="member-panel" hidden>
+      <div class="section-head">
+        <h2 id="member-title">歷史訂單</h2>
+        <button class="btn secondary" id="logout" type="button">登出</button>
+      </div>
+      <p id="member-meta" class="muted"></p>
+      <div id="member-orders"></div>
+    </section>
+  </main>
+  <footer id="site-footer"></footer>
+  <script src="/js/common.js"></script>
+  <script src="/js/member.js"></script>
+</body>
+</html>

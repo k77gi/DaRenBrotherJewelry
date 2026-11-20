@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>與我聯絡｜大仁哥的珠寶小舖</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body data-page="contact">
+  <a class="skip" href="#main">跳到主要內容</a>
+  <header id="site-header"></header>
+  <main class="wrap" id="main">
+    <h1>與我聯絡</h1>
+    <div class="split">
+      <form id="contact-form" class="panel">
+        <h2>諮詢表單</h2>
+        <div id="contact-alert" class="alert" hidden></div>
+        <label class="field">姓名<input name="name" required maxlength="40" autocomplete="name"></label>
+        <label class="field">聯絡電話<input name="phone" required maxlength="20" autocomplete="tel"></label>
+        <label class="field">Email<input name="email" type="email" required maxlength="120" autocomplete="email"></label>
+        <label class="field">諮詢內容<textarea name="message" required maxlength="1000"></textarea></label>
+        <button class="btn" type="submit">送出</button>
+      </form>
+      <aside id="store-info" class="panel"><p class="muted">店面資訊載入中…</p></aside>
+    </div>
+  </main>
+  <footer id="site-footer"></footer>
+  <script src="/js/common.js"></script>
+  <script src="/js/contact.js"></script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800">
+
+    <rect width="800" height="800" fill="#e4ddcf"/>
+    <ellipse cx="400" cy="430" rx="120" ry="170" fill="none" stroke="#c6a15a" stroke-width="28"/>
+    <polygon points="400,250 450,340 400,390 350,340" fill="#f7f4ee" stroke="#b89658" stroke-width="8"/>
+  
+</svg>

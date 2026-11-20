@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>管理登入｜大仁哥的珠寶小舖</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/admin.css">
+</head>
+<body class="admin-body">
+  <main class="auth-page" id="main">
+    <form id="login-form" class="panel">
+      <p class="eyebrow">後台</p>
+      <h1>管理登入</h1>
+      <div id="login-alert" class="alert error" hidden></div>
+      <label class="field">帳號<input name="username" required autocomplete="username"></label>
+      <label class="field">密碼<input name="password" type="password" required autocomplete="current-password"></label>
+      <div class="captcha-row">
+        <img id="captcha-image" alt="圖形驗證碼" width="140" height="48">
+        <button class="btn secondary" id="captcha-refresh" type="button">換一張</button>
+      </div>
+      <label class="field">驗證碼<input name="captchaCode" required maxlength="4" autocomplete="off" autocapitalize="characters"></label>
+      <input type="hidden" name="captchaId">
+      <button class="btn" type="submit">登入</button>
+      <p><a href="/">回商店前台</a></p>
+    </form>
+    <aside class="panel demo-box">
+      <h2>本機測試帳號</h2>
+      <ul>
+        <li>最大管理者：daren / Daren#2026</li>
+        <li>主要管理者：merch / Merch#2026</li>
+        <li>助理管理者：editor / Editor#2026</li>
+      </ul>
+      <p class="muted">三種角色登入後，左側選單會不一樣。連續錯誤 5 次會鎖定 15 分鐘。這些密碼只適合本機練習。</p>
+    </aside>
+  </main>
+  <script src="/js/common.js"></script>
+  <script src="/js/admin-login.js"></script>
+</body>
+</html>
