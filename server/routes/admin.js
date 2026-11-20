@@ -1,5 +1,4 @@
 const express = require('express');
-const bcrypt = require('bcryptjs');
 const { getDb } = require('../db');
 const { HttpError } = require('../httpError');
 const {
@@ -26,6 +25,7 @@ const { listOrders, setOrderStatus, setTracking } = require('../orderService');
 const { MODULES, modulesFor } = require('../permissions');
 const { createCaptcha, consumeCaptcha } = require('../captcha');
 const { saveUpload, cleanImagePath } = require('../uploads');
+const { hashPassword, verifyPassword, sanitizePlain } = require('../security');
 
 const router = express.Router();
 const LOCK_MINUTES = 15;
@@ -92,7 +92,7 @@ router.post('/login', route((req, res) => {
     JOIN roles r ON r.id = a.role_id
     WHERE a.username = ?
   `).get(username);
-  const matched = admin ? bcrypt.compareSync(password, admin.password_hash) : false;
+  const matched = admin ? verifyPassword(password, admin.password_hash) : false;
   if (!captchaOk || !admin || !matched) {
     const locked = recordLoginFailure(db, username);
     writeAudit(db, {
@@ -340,10 +340,10 @@ function publishedDate(value) {
 }
 
 function articleBody(body) {
-  const content = requiredText(body.content, 8000, '內文');
-  const summary = optionalText(body.summary, 200, '摘要');
+  const content = sanitizePlain(body.content, 8000, '內文', { required: true });
+  const summary = sanitizePlain(body.summary, 200, '摘要');
   return {
-    title: requiredText(body.title, 120, '標題'),
+    title: sanitizePlain(body.title, 120, '標題', { required: true }),
     summary: summary || content.replace(/\s+/g, ' ').slice(0, 80),
     content,
     coverImage: cleanImagePath(body.coverImage),
@@ -552,7 +552,7 @@ router.post('/admins', requirePermission('admins.write'), route((req, res) => {
   const password = String(req.body?.password || '');
   const roleId = requiredInt(req.body?.roleId, '角色', { min: 1 });
   if (!/^[a-z0-9]{3,20}$/.test(username)) throw new HttpError(400, '帳號請使用 3 到 20 個英數小寫');
-  if (password.length < 8 || password.length > 80) throw new HttpError(400, '密碼請設定 8 到 80 個字元');
+  if (password.length < 8 || password.length > 72) throw new HttpError(400, '密碼請設定 8 到 72 個字元');
   const db = getDb();
   const role = db.prepare('SELECT id, name, code FROM roles WHERE id = ?').get(roleId);
   if (!role) throw new HttpError(400, '請選擇有效的角色');
@@ -565,7 +565,7 @@ router.post('/admins', requirePermission('admins.write'), route((req, res) => {
   const info = db.prepare(`
     INSERT INTO admins (role_id, name, username, email, password_hash)
     VALUES (?, ?, ?, ?, ?)
-  `).run(roleId, name, username, email, bcrypt.hashSync(password, 10));
+  `).run(roleId, name, username, email, hashPassword(password));
   const id = Number(info.lastInsertRowid);
   writeAudit(db, {
     adminId: req.admin.id,

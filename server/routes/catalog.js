@@ -2,7 +2,7 @@ const express = require('express');
 const config = require('../config');
 const { getDb } = require('../db');
 const { HttpError } = require('../httpError');
-const { route } = require('../util');
+const { route, idParam } = require('../util');
 const { PRODUCT_SELECT, ARTICLE_SELECT, mapCategory, mapProduct, mapArticle } = require('../map');
 
 const router = express.Router();
@@ -39,9 +39,11 @@ router.get('/products', route((req, res) => {
     if (/^\d+$/.test(String(category))) {
       where += ' AND c.id = ?';
       params.push(Number(category));
-    } else {
+    } else if (/^[a-z0-9-]{1,40}$/.test(String(category))) {
       where += ' AND c.slug = ?';
       params.push(String(category));
+    } else {
+      throw new HttpError(400, '分類格式不正確');
     }
   }
   const rows = getDb().prepare(`
@@ -60,7 +62,7 @@ router.get('/products/:id', route((req, res) => {
     FROM products p
     JOIN categories c ON c.id = p.category_id
     WHERE p.id = ? AND p.is_published = 1
-  `).get(req.params.id);
+  `).get(idParam(req.params.id));
   if (!row) throw new HttpError(404, '找不到這個商品');
   res.json(mapProduct(row));
 }));
@@ -82,7 +84,7 @@ router.get('/articles/:id', route((req, res) => {
     FROM articles a
     LEFT JOIN admins ON admins.id = a.author_admin_id
     WHERE a.id = ? AND a.is_published = 1
-  `).get(req.params.id);
+  `).get(idParam(req.params.id));
   if (!row) throw new HttpError(404, '找不到這篇文章');
   res.json(mapArticle(row));
 }));

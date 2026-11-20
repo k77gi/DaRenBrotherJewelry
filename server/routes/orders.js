@@ -10,6 +10,7 @@ const {
   requiredInt
 } = require('../util');
 const { optionalMember, requireMember } = require('../middleware/auth');
+const { assertNoCardData, sanitizePlain } = require('../security');
 const { createOrder, getOrderByNo, payOrder } = require('../orderService');
 
 const router = express.Router();
@@ -40,12 +41,13 @@ function normalizeItems(items) {
 
 router.post('/', optionalMember, route((req, res) => {
   const body = req.body || {};
+  assertNoCardData(body);
   const input = {
-    buyerName: requiredText(body.buyerName, 40, '收件人'),
+    buyerName: sanitizePlain(body.buyerName, 40, '收件人', { required: true }),
     buyerEmail: requiredEmail(body.buyerEmail),
     buyerPhone: requiredPhone(body.buyerPhone),
-    shippingAddress: requiredText(body.shippingAddress, 200, '收件地址'),
-    note: optionalText(body.note, 300, '備註'),
+    shippingAddress: sanitizePlain(body.shippingAddress, 200, '收件地址', { required: true }),
+    note: sanitizePlain(body.note, 300, '備註'),
     items: normalizeItems(body.items),
     memberId: null
   };
@@ -68,6 +70,7 @@ router.post('/lookup', route((req, res) => {
 }));
 
 router.post('/:orderNo/pay', optionalMember, route((req, res) => {
+  assertNoCardData(req.body);
   const email = req.body?.email ? requiredEmail(req.body.email) : '';
   const order = payOrder(getDb(), {
     orderNo: req.params.orderNo,

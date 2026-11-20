@@ -5,6 +5,7 @@ const { seed } = require('./seed');
 const { backfillVisuals } = require('./visuals');
 const { PERMISSIONS, ROLES, codesFor } = require('./permissions');
 const { timestamp } = require('./util');
+const { isBcryptHash } = require('./security');
 
 let database;
 
@@ -47,11 +48,14 @@ function initDb() {
     seeded = true;
   }
   alignRoles(database);
+  assertPasswordHashes(database);
   backfillVisuals(database);
   return { seeded };
 }
 
 function columnNames(db, table) {
+  const allowed = new Set(['products', 'articles', 'orders']);
+  if (!allowed.has(table)) throw new Error('未知資料表');
   return db.prepare(`PRAGMA table_info(${table})`).all().map((column) => column.name);
 }
 
@@ -133,6 +137,18 @@ function alignRoles(db) {
   } catch (error) {
     try { db.exec('ROLLBACK'); } catch (rollbackError) { /* 沒有進行中的交易時略過 */ }
     throw error;
+  }
+}
+
+function assertPasswordHashes(db) {
+  const members = db.prepare('SELECT id, password_hash FROM members').all();
+  const admins = db.prepare('SELECT id, password_hash FROM admins').all();
+  const plain = [
+    ...members.filter((row) => !isBcryptHash(row.password_hash)).map((row) => `members:${row.id}`),
+    ...admins.filter((row) => !isBcryptHash(row.password_hash)).map((row) => `admins:${row.id}`)
+  ];
+  if (plain.length) {
+    throw new Error(`發現未使用 bcrypt 雜湊的密碼：${plain.join(', ')}`);
   }
 }
 

@@ -1,14 +1,14 @@
 const express = require('express');
-const bcrypt = require('bcryptjs');
 const { getDb } = require('../db');
 const { HttpError } = require('../httpError');
 const { route, requiredText, requiredEmail, optionalPhone } = require('../util');
 const { signToken, requireMember } = require('../middleware/auth');
 const { mapMember } = require('../map');
 const { listOrders } = require('../orderService');
+const { hashPassword, verifyPassword } = require('../security');
 
 const router = express.Router();
-const dummyHash = bcrypt.hashSync('dummy-password', 10);
+const dummyHash = hashPassword('dummy-password');
 
 function publicMember(row) {
   return mapMember(row);
@@ -27,7 +27,7 @@ router.post('/register', route((req, res) => {
   if (exists) throw new HttpError(409, '這個電子郵件已經註冊');
   const info = db.prepare(
     'INSERT INTO members (name, email, password_hash, phone) VALUES (?, ?, ?, ?)'
-  ).run(name, email, bcrypt.hashSync(password, 10), phone);
+  ).run(name, email, hashPassword(password), phone);
   const member = db.prepare(
     'SELECT id, name, email, phone, created_at FROM members WHERE id = ?'
   ).get(Number(info.lastInsertRowid));
@@ -44,7 +44,7 @@ router.post('/login', route((req, res) => {
     'SELECT id, name, email, phone, password_hash, created_at FROM members WHERE email = ?'
   ).get(email);
   const hash = member ? member.password_hash : dummyHash;
-  const matched = bcrypt.compareSync(password, hash);
+  const matched = verifyPassword(password, hash);
   if (!member || !matched) throw new HttpError(401, '電子郵件或密碼不正確');
   res.json({
     token: signToken({ typ: 'member', id: member.id }),

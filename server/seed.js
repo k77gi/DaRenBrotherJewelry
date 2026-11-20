@@ -1,5 +1,5 @@
-const bcrypt = require('bcryptjs');
 const { PERMISSIONS, ROLES, codesFor } = require('./permissions');
+const { hashPassword } = require('./security');
 const { timestamp } = require('./util');
 const { writeAudit } = require('./audit');
 
@@ -131,7 +131,7 @@ function seed(db) {
         account.name,
         account.username,
         account.email,
-        bcrypt.hashSync(account.password, 10)
+        hashPassword(account.password)
       );
       adminIds[account.username] = Number(info.lastInsertRowid);
     }
