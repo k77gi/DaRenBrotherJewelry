@@ -43,7 +43,9 @@
 
 .check-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px 12px; margin: 12px 0; }
 
-.preview-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.preview-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-start; }
+.image-card { display: grid; gap: 6px; width: 120px; }
+.image-card .btn { width: 100%; text-align: center; }
 
 .preview-row img { width: 72px; height: 72px; object-fit: cover; background: #fff; }
 

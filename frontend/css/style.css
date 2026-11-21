@@ -96,6 +96,8 @@ main.wrap { padding: 32px 0 64px; }
 .eyebrow { margin: 0 0 6px; color: var(--gold); font-size: 12px; letter-spacing: 0.14em; }
 
 .muted { color: var(--muted); }
+.qr-box { display: grid; justify-items: start; gap: 8px; margin-bottom: 8px; }
+.qr-box svg { width: 220px; height: 220px; background: white; border: 1px solid var(--line); }
 
 .hero h1 { font-size: 40px; margin: 8px 0 12px; }
 
@@ -295,12 +297,12 @@ th { font-size: 13px; color: var(--muted); font-weight: 600; background: #faf7f2
 .cart-link span { position: absolute; top: -2px; right: -2px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; background: #e6d3b0; color: #1f1b17; font-size: 12px; line-height: 18px; text-align: center; }
 #back-to-top { position: fixed; right: 18px; bottom: 18px; z-index: 5; border: 1px solid var(--line); background: var(--paper); color: var(--ink); padding: 10px 12px; cursor: pointer; opacity: 0; pointer-events: none; }
 #back-to-top.is-visible { opacity: 1; pointer-events: auto; }
-.banner { position: relative; background: #1f1b17; color: #f7f3ec; min-height: 320px; }
+.banner { position: relative; overflow: hidden; background: #1f1b17; color: #f7f3ec; min-height: 320px; }
 .banner-slide { display: none; min-height: 320px; align-items: center; gap: 28px; padding: 48px 7vw 72px; }
 .banner-slide.is-active { display: grid; grid-template-columns: 1.15fr 0.85fr; }
 .banner-slide h1 { color: #f7f3ec; font-size: 40px; margin-bottom: 8px; }
 .banner-slide p { max-width: 560px; }
-.banner-slide img { width: var(--banner-w, 100%); height: var(--banner-h, 240px); max-width: 100%; object-fit: cover; justify-self: end; }
+.banner-slide img { width: var(--banner-w, 480px); height: var(--banner-h, 240px); max-width: none; object-fit: cover; justify-self: end; }
 .banner-arrow, .banner-dot { border: 1px solid rgba(247, 243, 236, 0.45); background: transparent; color: #f7f3ec; cursor: pointer; }
 .banner-arrow { position: absolute; top: 46%; width: 36px; height: 36px; }
 .banner-arrow.prev { left: 16px; }
@@ -345,7 +347,7 @@ th { font-size: 13px; color: var(--muted); font-weight: 600; background: #faf7f2
   }
   .header-inner { display: flex; flex-wrap: wrap; padding: 12px 0; }
   .banner-slide.is-active { display: block; padding: 32px 16px 64px; }
-  .banner-slide img { width: 100%; height: min(var(--banner-h, 240px), 56vw); }
+  .banner-slide img { width: min(var(--banner-w, 480px), 100%); height: min(var(--banner-h, 240px), 56vw); }
   .hero h1, .banner-slide h1 { font-size: 32px; }
   .nav { width: 100%; }
   .cart-line { grid-template-columns: 1fr; }

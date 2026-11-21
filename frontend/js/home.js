@@ -52,7 +52,7 @@ function paintBanners(banners) {
         ${banner.body ? `<p>${esc(banner.body)}</p>` : ''}
         <a class="btn" href="${esc(banner.linkHref)}">${esc(banner.linkLabel)}</a>
       </div>
-      <img src="${esc(banner.image)}" alt="${esc(banner.altText || banner.title)}" style="--banner-w:${Number(banner.imageWidth) || 100}%;--banner-h:${Number(banner.imageHeight) || 240}px">
+      <img src="${esc(banner.image)}" alt="${esc(banner.altText || banner.title)}" style="--banner-w:${Number(banner.imageWidth) || 480}px;--banner-h:${Number(banner.imageHeight) || 240}px">
     </article>
   `).join('');
   const dots = banners.map((banner, index) => `

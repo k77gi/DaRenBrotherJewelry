@@ -170,12 +170,21 @@ CREATE TABLE banners (
   link_label TEXT NOT NULL DEFAULT '查看',
   image TEXT NOT NULL DEFAULT '',
   alt_text TEXT NOT NULL DEFAULT '',
-  image_width INTEGER NOT NULL DEFAULT 100,
+  image_width INTEGER NOT NULL DEFAULT 480,
   image_height INTEGER NOT NULL DEFAULT 240,
   sort_order INTEGER NOT NULL DEFAULT 0,
   is_published INTEGER NOT NULL DEFAULT 1 CHECK (is_published IN (0, 1)),
   created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+
+CREATE TABLE login_tickets (
+  id TEXT PRIMARY KEY,
+  secret_hash TEXT NOT NULL,
+  member_id INTEGER,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'used')),
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
 CREATE TABLE inquiries (

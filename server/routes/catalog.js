@@ -77,7 +77,7 @@ function mapBanner(row) {
     linkLabel: row.link_label,
     image: row.image,
     altText: row.alt_text,
-    imageWidth: row.image_width || 100,
+    imageWidth: row.image_width || 480,
     imageHeight: row.image_height || 240,
     sortOrder: row.sort_order,
     isPublished: !!row.is_published

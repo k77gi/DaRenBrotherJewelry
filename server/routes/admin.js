@@ -643,7 +643,7 @@ function bannerBody(body) {
     linkLabel: sanitizePlain(body.linkLabel, 20, '按鈕文字', { required: true }),
     image,
     altText: sanitizePlain(body.altText, 80, '圖片說明'),
-    imageWidth: requiredInt(body.imageWidth, '圖片寬度', { min: 40, max: 100 }),
+    imageWidth: requiredInt(body.imageWidth, '圖片寬度', { min: 80, max: 1600 }),
     imageHeight: requiredInt(body.imageHeight, '圖片高度', { min: 80, max: 480 }),
     sortOrder: requiredInt(body.sortOrder, '排序', { min: 0, max: 999 }),
     isPublished: readFlag(body.isPublished) ? 1 : 0
@@ -660,7 +660,7 @@ function mapAdminBanner(row) {
     linkLabel: row.link_label,
     image: row.image,
     altText: row.alt_text,
-    imageWidth: row.image_width || 100,
+    imageWidth: row.image_width || 480,
     imageHeight: row.image_height || 240,
     sortOrder: row.sort_order,
     isPublished: !!row.is_published

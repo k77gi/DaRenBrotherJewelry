@@ -76,8 +76,9 @@ async function saveUpload(req) {
 function cleanImagePath(value) {
   const text = String(value || '').trim();
   if (!text) return '';
-  if (!/^\/uploads\/[a-z0-9.-]+$/i.test(text)) throw new HttpError(400, '圖片路徑不正確');
-  return text;
+  if (/^\/uploads\/[a-z0-9.-]+$/i.test(text)) return text;
+  if (/^\/images\/(products|articles|banners)\/[a-z0-9.-]+\.svg$/i.test(text)) return text;
+  throw new HttpError(400, '圖片路徑不正確');
 }
 
 module.exports = { uploadDir, saveUpload, cleanImagePath };

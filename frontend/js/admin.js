@@ -134,13 +134,13 @@ function bannerForm() {
         <label class="field">按鈕文字<input name="linkLabel" required maxlength="20" value="${draft ? esc(draft.linkLabel) : '查看'}"></label>
         <label class="field">按鈕連結<input name="linkHref" required maxlength="120" value="${draft ? esc(draft.linkHref) : '/shop.html'}"></label>
         <label class="field">排序<input name="sortOrder" type="number" min="0" max="999" required value="${draft ? draft.sortOrder : state.banners.length + 1}"></label>
-        <label class="field">圖片寬度（%）<input name="imageWidth" type="number" min="40" max="100" required value="${draft ? draft.imageWidth : 100}"></label>
+        <label class="field">圖片寬度（px）<input name="imageWidth" type="number" min="80" max="1600" required value="${draft ? draft.imageWidth : 480}"></label>
         <label class="field">圖片高度（px）<input name="imageHeight" type="number" min="80" max="480" required value="${draft ? draft.imageHeight : 240}"></label>
         <label class="field wide">說明<input name="body" maxlength="200" value="${draft ? esc(draft.body) : ''}"></label>
         <label class="field wide">圖片說明<input name="altText" maxlength="80" value="${draft ? esc(draft.altText) : ''}"></label>
-        <label class="field wide">圖片<input name="imageFile" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+        <label class="field wide">圖片<input data-add-image="#banner-images" data-input-name="image" data-single="1" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
       </div>
-      ${draft && draft.image ? `<p class="preview-row"><img src="${esc(draft.image)}" alt=""></p>` : ''}
+      <div id="banner-images" class="preview-row">${draft && draft.image ? imageCard(draft.image, 'image') : ''}</div>
       <p class="muted">連結請填本站路徑，例如 /shop.html。數字越小越靠前。</p>
       <label class="check"><input type="checkbox" name="isPublished" ${!draft || draft.isPublished ? 'checked' : ''}> 顯示在首頁</label>
       <div class="btn-row">
@@ -166,7 +166,7 @@ function paintBanners() {
   `).join('');
   document.getElementById('panel').innerHTML = `
     <h1>主視覺</h1>
-    <p class="muted">首頁輪播會依排序顯示已勾選的項目，約每 5 秒換一張。</p>
+    <p class="muted">首頁輪播會依排序顯示已勾選的項目，約每 5 秒換一張。每張圖片都可以修改或刪除，寬度與高度以像素計算。</p>
     ${bannerForm()}
     <div class="table-wrap">
       <table>
@@ -175,6 +175,7 @@ function paintBanners() {
       </table>
     </div>
   `;
+  bindImagePickers(document.getElementById('panel'));
 }
 
 async function renderBanners() {
@@ -203,19 +204,11 @@ function productForm() {
         <label class="field wide">品牌簡介<input name="summary" maxlength="200" value="${draft ? esc(draft.summary) : ''}"></label>
         <label class="field wide">商品說明<textarea name="description">${draft ? esc(draft.description) : ''}</textarea></label>
         <label class="field wide">保養說明<textarea name="care">${draft ? esc(draft.care) : ''}</textarea></label>
-        <label class="field wide">主圖<input name="mainFile" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
-        <label class="field wide">細節附圖（可多選）<input name="detailFiles" type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple></label>
+        <label class="field wide">主圖<input data-add-image="#main-images" data-input-name="mainImage" data-single="1" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+        <label class="field wide">細節附圖（可多選）<input data-add-image="#detail-images" data-input-name="detailImage" type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple></label>
       </div>
-      <input type="hidden" name="mainImage" value="${draft ? esc(draft.mainImage) : ''}">
-      ${draft && draft.mainImage ? `<p class="preview-row"><img src="${esc(draft.mainImage)}" alt="目前主圖"></p>` : ''}
-      ${draft && draft.detailImages.length ? `
-        <fieldset class="preview-row">
-          <legend>保留細節圖</legend>
-          ${draft.detailImages.map((src) => `
-            <label class="check"><input type="checkbox" name="keepDetail" value="${esc(src)}" checked><img src="${esc(src)}" alt=""></label>
-          `).join('')}
-        </fieldset>
-      ` : ''}
+      <div id="main-images" class="preview-row">${draft && draft.mainImage ? imageCard(draft.mainImage, 'mainImage') : ''}</div>
+      <div id="detail-images" class="preview-row">${draft && draft.detailImages.length ? draft.detailImages.map((src) => imageCard(src, 'detailImage')).join('') : ''}</div>
       <label class="check"><input type="checkbox" name="isPublished" ${!draft || draft.isPublished ? 'checked' : ''}> 上架，前台看得到</label>
       <div class="btn-row">
         <button class="btn" type="submit">${draft ? '儲存修改' : '新增商品'}</button>
@@ -251,6 +244,7 @@ function paintProducts() {
       </table>
     </div>
   `;
+  bindImagePickers(document.getElementById('panel'));
 }
 
 async function renderProducts() {
@@ -311,9 +305,8 @@ function articleForm() {
       <label class="field">內文<textarea name="content" required>${draft ? esc(draft.content) : ''}</textarea></label>
       <p class="muted">段落之間空一行。前台會依空行分段。</p>
       <label class="field">發布日期<input name="publishedAt" type="date" required value="${esc(published)}"></label>
-      <label class="field">封面影像<input name="coverFile" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
-      <input type="hidden" name="coverImage" value="${draft ? esc(draft.coverImage) : ''}">
-      ${draft && draft.coverImage ? `<p class="preview-row"><img src="${esc(draft.coverImage)}" alt="目前封面"></p>` : ''}
+      <label class="field">封面影像<input data-add-image="#cover-images" data-input-name="coverImage" data-single="1" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+      <div id="cover-images" class="preview-row">${draft && draft.coverImage ? imageCard(draft.coverImage, 'coverImage') : ''}</div>
       <label class="check"><input type="checkbox" name="isPublished" ${!draft || draft.isPublished ? 'checked' : ''}> 發佈到前台</label>
       <div class="btn-row">
         <button class="btn" type="submit">${draft ? '儲存修改' : '新增文章'}</button>
@@ -347,6 +340,7 @@ function paintArticles() {
       </table>
     </div>
   `;
+  bindImagePickers(document.getElementById('panel'));
 }
 
 async function renderArticles() {
@@ -528,9 +522,41 @@ async function uploadImage(file) {
   return payload.url;
 }
 
+function imageCard(src, inputName) {
+  return `
+    <div class="image-card">
+      <img src="${esc(src)}" alt="">
+      <input type="hidden" name="${inputName}" value="${esc(src)}">
+      <button class="btn secondary" type="button" data-action="replace-image">修改</button>
+      <button class="btn danger" type="button" data-action="remove-image">刪除</button>
+    </div>
+  `;
+}
+
+function bindImagePickers(root) {
+  root.querySelectorAll('[data-add-image]').forEach((input) => {
+    input.addEventListener('change', async () => {
+      const target = root.querySelector(input.dataset.addImage);
+      if (!target || !input.files.length) return;
+      try {
+        for (const file of input.files) {
+          const url = await uploadImage(file);
+          const html = imageCard(url, input.dataset.inputName);
+          if (input.dataset.single === '1') target.innerHTML = html;
+          else target.insertAdjacentHTML('beforeend', html);
+        }
+        input.value = '';
+        clearAlert();
+      } catch (error) {
+        setAlert(error);
+      }
+    });
+  });
+}
+
 async function saveBanner(form) {
-  let image = form.image.value;
-  if (form.imageFile.files[0]) image = await uploadImage(form.imageFile.files[0]);
+  const imageInput = form.querySelector('input[name="image"]');
+  const image = imageInput ? imageInput.value : '';
   const body = {
     eyebrow: form.eyebrow.value,
     title: form.title.value,
@@ -555,12 +581,9 @@ async function saveBanner(form) {
 }
 
 async function saveProduct(form) {
-  let mainImage = form.mainImage.value;
-  if (form.mainFile.files[0]) mainImage = await uploadImage(form.mainFile.files[0]);
-  const detailImages = [...form.querySelectorAll('input[name="keepDetail"]:checked')].map((item) => item.value);
-  for (const file of form.detailFiles.files) {
-    detailImages.push(await uploadImage(file));
-  }
+  const mainInput = form.querySelector('input[name="mainImage"]');
+  const mainImage = mainInput ? mainInput.value : '';
+  const detailImages = [...form.querySelectorAll('input[name="detailImage"]')].map((item) => item.value);
   const body = {
     categoryId: Number(form.categoryId.value),
     name: form.name.value,
@@ -587,8 +610,8 @@ async function saveProduct(form) {
 }
 
 async function saveArticle(form) {
-  let coverImage = form.coverImage.value;
-  if (form.coverFile.files[0]) coverImage = await uploadImage(form.coverFile.files[0]);
+  const coverInput = form.querySelector('input[name="coverImage"]');
+  const coverImage = coverInput ? coverInput.value : '';
   const body = {
     title: form.title.value,
     summary: form.summary.value,
@@ -667,6 +690,28 @@ async function onClick(event) {
   const action = button.dataset.action;
   const id = Number(button.dataset.id);
   try {
+    if (action === 'replace-image') {
+      const card = button.closest('.image-card');
+      const picker = document.createElement('input');
+      picker.type = 'file';
+      picker.accept = 'image/jpeg,image/png,image/gif,image/webp';
+      picker.addEventListener('change', async () => {
+        const file = picker.files && picker.files[0];
+        if (!file) return;
+        try {
+          const url = await uploadImage(file);
+          card.querySelector('img').src = url;
+          card.querySelector('input').value = url;
+          clearAlert();
+        } catch (error) {
+          setAlert(error);
+        }
+      });
+      picker.click();
+    }
+    if (action === 'remove-image') {
+      button.closest('.image-card').remove();
+    }
     if (action === 'edit-banner') {
       state.bannerDraft = state.banners.find((item) => item.id === id) || null;
       paintBanners();

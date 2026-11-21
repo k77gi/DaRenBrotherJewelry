@@ -16,6 +16,13 @@
       <form id="login-form" class="panel">
         <h2>登入</h2>
         <div id="login-alert" class="alert error" hidden></div>
+        <div id="qr-login" class="qr-box">
+          <p>用手機相機掃描 QR Code。手機確認後，這台電腦會登入。</p>
+          <div id="qr-image" role="img" aria-label="登入 QR Code"></div>
+          <p id="qr-status" class="muted">QR Code 產生中…</p>
+          <button class="btn secondary" id="qr-refresh" type="button" hidden>重新產生</button>
+        </div>
+        <p id="phone-login-note" class="muted" hidden>這是手機上的登入確認。請用帳號登入或註冊，完成後電腦就會登入。</p>
         <label class="field">帳號<input name="account" required autocomplete="username" placeholder="電子郵件、電話或 LINE ID"></label>
         <label class="field">密碼<input name="password" type="password" required autocomplete="current-password"></label>
         <button class="btn" type="submit">登入</button>
@@ -39,6 +46,12 @@
       </form>
     </div>
     <section id="member-panel" hidden>
+      <div id="qr-approve" class="panel" hidden>
+        <h2>允許電腦登入</h2>
+        <p>手機已登入。按下按鈕後，掃了 QR Code 的電腦會登入同一個會員。</p>
+        <div id="qr-approve-alert" class="alert error" hidden></div>
+        <button class="btn" id="qr-approve-btn" type="button">允許這台電腦登入</button>
+      </div>
       <div class="section-head">
         <h2 id="member-title">歷史訂單</h2>
         <button class="btn secondary" id="logout" type="button">登出</button>

@@ -92,7 +92,7 @@ function migrate(db) {
       sort_order INTEGER NOT NULL DEFAULT 0,
       is_published INTEGER NOT NULL DEFAULT 1 CHECK (is_published IN (0, 1)),
       created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
-      image_width INTEGER NOT NULL DEFAULT 100,
+      image_width INTEGER NOT NULL DEFAULT 480,
       image_height INTEGER NOT NULL DEFAULT 240,
       updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
     )
@@ -100,9 +100,20 @@ function migrate(db) {
   const members = columnNames(db, 'members');
   if (!members.includes('line_id')) db.exec("ALTER TABLE members ADD COLUMN line_id TEXT NOT NULL DEFAULT ''");
   const banners = columnNames(db, 'banners');
-  if (!banners.includes('image_width')) db.exec('ALTER TABLE banners ADD COLUMN image_width INTEGER NOT NULL DEFAULT 100');
+  if (!banners.includes('image_width')) db.exec('ALTER TABLE banners ADD COLUMN image_width INTEGER NOT NULL DEFAULT 480');
   if (!banners.includes('image_height')) db.exec('ALTER TABLE banners ADD COLUMN image_height INTEGER NOT NULL DEFAULT 240');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS login_tickets (
+      id TEXT PRIMARY KEY,
+      secret_hash TEXT NOT NULL,
+      member_id INTEGER,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'used')),
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+    )
+  `);
   seedBanners(db);
+  convertBannerWidths(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS inquiries (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -113,6 +124,17 @@ function migrate(db) {
       created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
     )
   `);
+}
+
+function convertBannerWidths(db) {
+  const done = db.prepare("SELECT value FROM schema_meta WHERE key = 'banner_width_px'").get();
+  if (done) return;
+  db.prepare(`
+    UPDATE banners
+    SET image_width = image_width * 480 / 100
+    WHERE image_width BETWEEN 40 AND 200
+  `).run();
+  db.prepare("INSERT INTO schema_meta (key, value) VALUES ('banner_width_px', ?)").run(timestamp());
 }
 
 function alignRoles(db) {

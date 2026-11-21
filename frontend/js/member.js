@@ -1,7 +1,64 @@
-function saveMember(result) {
+function loginTicket() {
+  return new URLSearchParams(location.search).get('login') || '';
+}
+
+async function saveMember(result) {
   localStorage.setItem('daren-member-token', result.token);
   localStorage.setItem('daren-member-name', result.member.name);
-  location.reload();
+  const ticket = loginTicket();
+  if (ticket) {
+    try {
+      await api('/members/qr/confirm', { method: 'POST', auth: 'member', body: { ticket } });
+    } catch (error) {
+      location.href = `/member.html?login=${encodeURIComponent(ticket)}`;
+      return;
+    }
+  }
+  location.href = '/member.html';
+}
+
+function startQrLogin() {
+  const image = document.getElementById('qr-image');
+  const status = document.getElementById('qr-status');
+  const refresh = document.getElementById('qr-refresh');
+  let timer = 0;
+  const begin = async () => {
+    clearInterval(timer);
+    refresh.hidden = true;
+    status.textContent = 'QR Code 產生中…';
+    image.innerHTML = '';
+    try {
+      const started = await api('/members/qr/start', { method: 'POST', body: {} });
+      if (!String(started.svg || '').trim().startsWith('<svg')) throw new Error('QR Code 產生失敗');
+      image.innerHTML = started.svg;
+      status.textContent = '等待手機確認，五分鐘內有效。';
+      timer = setInterval(async () => {
+        try {
+          const result = await api('/members/qr/poll', {
+            method: 'POST',
+            body: { ticket: started.ticket, secret: started.secret }
+          });
+          if (result.status === 'pending') return;
+          clearInterval(timer);
+          if (result.status === 'confirmed') {
+            saveMember(result);
+            return;
+          }
+          status.textContent = 'QR Code 已失效。';
+          refresh.hidden = false;
+        } catch (error) {
+          clearInterval(timer);
+          status.textContent = readableError(error);
+          refresh.hidden = false;
+        }
+      }, 2000);
+    } catch (error) {
+      status.textContent = readableError(error);
+      refresh.hidden = false;
+    }
+  };
+  refresh.addEventListener('click', begin);
+  begin();
 }
 
 function bindGuestForms() {
@@ -59,9 +116,33 @@ function bindGuestForms() {
   });
 }
 
+function bindQrApproval() {
+  const ticket = loginTicket();
+  const box = document.getElementById('qr-approve');
+  if (!ticket) return;
+  box.hidden = false;
+  document.getElementById('qr-approve-btn').addEventListener('click', async () => {
+    const alert = document.getElementById('qr-approve-alert');
+    alert.hidden = true;
+    try {
+      await api('/members/qr/confirm', { method: 'POST', auth: 'member', body: { ticket } });
+      location.href = '/member.html';
+    } catch (error) {
+      alert.hidden = false;
+      alert.textContent = readableError(error);
+    }
+  });
+}
+
 async function loadMember() {
   const token = localStorage.getItem('daren-member-token');
   if (!token) {
+    if (loginTicket()) {
+      document.getElementById('qr-login').hidden = true;
+      document.getElementById('phone-login-note').hidden = false;
+    } else {
+      startQrLogin();
+    }
     bindGuestForms();
     return;
   }
@@ -83,6 +164,7 @@ async function loadMember() {
     document.getElementById('member-orders').innerHTML = orders.length
       ? orders.map(renderOrder).join('')
       : '<p>還沒有訂單。</p>';
+    bindQrApproval();
     document.getElementById('logout').addEventListener('click', () => {
       localStorage.removeItem('daren-member-token');
       localStorage.removeItem('daren-member-name');
