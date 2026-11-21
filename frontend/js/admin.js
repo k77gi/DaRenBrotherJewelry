@@ -134,6 +134,8 @@ function bannerForm() {
         <label class="field">按鈕文字<input name="linkLabel" required maxlength="20" value="${draft ? esc(draft.linkLabel) : '查看'}"></label>
         <label class="field">按鈕連結<input name="linkHref" required maxlength="120" value="${draft ? esc(draft.linkHref) : '/shop.html'}"></label>
         <label class="field">排序<input name="sortOrder" type="number" min="0" max="999" required value="${draft ? draft.sortOrder : state.banners.length + 1}"></label>
+        <label class="field">圖片寬度（%）<input name="imageWidth" type="number" min="40" max="100" required value="${draft ? draft.imageWidth : 100}"></label>
+        <label class="field">圖片高度（px）<input name="imageHeight" type="number" min="80" max="480" required value="${draft ? draft.imageHeight : 240}"></label>
         <label class="field wide">說明<input name="body" maxlength="200" value="${draft ? esc(draft.body) : ''}"></label>
         <label class="field wide">圖片說明<input name="altText" maxlength="80" value="${draft ? esc(draft.altText) : ''}"></label>
         <label class="field wide">圖片<input name="imageFile" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
@@ -396,8 +398,9 @@ async function renderMembers() {
   const rows = members.map((member) => `
     <tr>
       <td>${esc(member.name)}</td>
-      <td>${esc(member.email)}</td>
+      <td>${esc(member.email || '—')}</td>
       <td>${esc(member.phone || '—')}</td>
+      <td>${esc(member.lineId || '—')}</td>
       <td>${esc(member.createdAt)}</td>
     </tr>
   `).join('');
@@ -405,8 +408,8 @@ async function renderMembers() {
     <h1>會員管理</h1>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>姓名</th><th>電子郵件</th><th>電話</th><th>註冊時間</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="4">還沒有會員。</td></tr>'}</tbody>
+        <thead><tr><th>姓名</th><th>電子郵件</th><th>電話</th><th>LINE ID</th><th>註冊時間</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5">還沒有會員。</td></tr>'}</tbody>
       </table>
     </div>
   `;
@@ -535,6 +538,8 @@ async function saveBanner(form) {
     linkLabel: form.linkLabel.value,
     linkHref: form.linkHref.value,
     sortOrder: Number(form.sortOrder.value),
+    imageWidth: Number(form.imageWidth.value),
+    imageHeight: Number(form.imageHeight.value),
     altText: form.altText.value,
     image,
     isPublished: form.isPublished.checked

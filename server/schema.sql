@@ -95,6 +95,7 @@ CREATE TABLE members (
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
   phone TEXT NOT NULL DEFAULT '',
+  line_id TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
@@ -169,6 +170,8 @@ CREATE TABLE banners (
   link_label TEXT NOT NULL DEFAULT '查看',
   image TEXT NOT NULL DEFAULT '',
   alt_text TEXT NOT NULL DEFAULT '',
+  image_width INTEGER NOT NULL DEFAULT 100,
+  image_height INTEGER NOT NULL DEFAULT 240,
   sort_order INTEGER NOT NULL DEFAULT 0,
   is_published INTEGER NOT NULL DEFAULT 1 CHECK (is_published IN (0, 1)),
   created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),

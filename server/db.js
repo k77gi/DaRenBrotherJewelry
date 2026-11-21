@@ -54,7 +54,7 @@ function initDb() {
 }
 
 function columnNames(db, table) {
-  const allowed = new Set(['products', 'articles', 'orders']);
+  const allowed = new Set(['products', 'articles', 'orders', 'members', 'banners']);
   if (!allowed.has(table)) throw new Error('未知資料表');
   return db.prepare(`PRAGMA table_info(${table})`).all().map((column) => column.name);
 }
@@ -92,9 +92,16 @@ function migrate(db) {
       sort_order INTEGER NOT NULL DEFAULT 0,
       is_published INTEGER NOT NULL DEFAULT 1 CHECK (is_published IN (0, 1)),
       created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+      image_width INTEGER NOT NULL DEFAULT 100,
+      image_height INTEGER NOT NULL DEFAULT 240,
       updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
     )
   `);
+  const members = columnNames(db, 'members');
+  if (!members.includes('line_id')) db.exec("ALTER TABLE members ADD COLUMN line_id TEXT NOT NULL DEFAULT ''");
+  const banners = columnNames(db, 'banners');
+  if (!banners.includes('image_width')) db.exec('ALTER TABLE banners ADD COLUMN image_width INTEGER NOT NULL DEFAULT 100');
+  if (!banners.includes('image_height')) db.exec('ALTER TABLE banners ADD COLUMN image_height INTEGER NOT NULL DEFAULT 240');
   seedBanners(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS inquiries (

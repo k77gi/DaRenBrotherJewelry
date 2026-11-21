@@ -467,7 +467,7 @@ router.patch('/orders/:id/status', requirePermission('orders.write'), route((req
 
 router.get('/members', requirePermission('members.read'), route((req, res) => {
   const rows = getDb().prepare(
-    'SELECT id, name, email, phone, created_at FROM members ORDER BY id DESC'
+    'SELECT id, name, email, phone, line_id, created_at FROM members ORDER BY id DESC'
   ).all();
   res.json(rows.map(mapMember));
 }));
@@ -643,6 +643,8 @@ function bannerBody(body) {
     linkLabel: sanitizePlain(body.linkLabel, 20, '按鈕文字', { required: true }),
     image,
     altText: sanitizePlain(body.altText, 80, '圖片說明'),
+    imageWidth: requiredInt(body.imageWidth, '圖片寬度', { min: 40, max: 100 }),
+    imageHeight: requiredInt(body.imageHeight, '圖片高度', { min: 80, max: 480 }),
     sortOrder: requiredInt(body.sortOrder, '排序', { min: 0, max: 999 }),
     isPublished: readFlag(body.isPublished) ? 1 : 0
   };
@@ -658,6 +660,8 @@ function mapAdminBanner(row) {
     linkLabel: row.link_label,
     image: row.image,
     altText: row.alt_text,
+    imageWidth: row.image_width || 100,
+    imageHeight: row.image_height || 240,
     sortOrder: row.sort_order,
     isPublished: !!row.is_published
   };
@@ -665,7 +669,8 @@ function mapAdminBanner(row) {
 
 router.get('/banners', requirePermission('products.write'), route((req, res) => {
   const rows = getDb().prepare(`
-    SELECT id, eyebrow, title, body, link_href, link_label, image, alt_text, sort_order, is_published
+    SELECT id, eyebrow, title, body, link_href, link_label, image, alt_text,
+           image_width, image_height, sort_order, is_published
     FROM banners
     ORDER BY sort_order, id
   `).all();
@@ -677,11 +682,12 @@ router.post('/banners', requirePermission('products.write'), route((req, res) =>
   const db = getDb();
   const info = db.prepare(`
     INSERT INTO banners (
-      eyebrow, title, body, link_href, link_label, image, alt_text, sort_order, is_published
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      eyebrow, title, body, link_href, link_label, image, alt_text,
+      image_width, image_height, sort_order, is_published
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     input.eyebrow, input.title, input.body, input.linkHref, input.linkLabel,
-    input.image, input.altText, input.sortOrder, input.isPublished
+    input.image, input.altText, input.imageWidth, input.imageHeight, input.sortOrder, input.isPublished
   );
   const id = Number(info.lastInsertRowid);
   writeAudit(db, {
@@ -704,11 +710,13 @@ router.put('/banners/:id', requirePermission('products.write'), route((req, res)
   db.prepare(`
     UPDATE banners
     SET eyebrow = ?, title = ?, body = ?, link_href = ?, link_label = ?,
-        image = ?, alt_text = ?, sort_order = ?, is_published = ?, updated_at = ?
+        image = ?, alt_text = ?, image_width = ?, image_height = ?,
+        sort_order = ?, is_published = ?, updated_at = ?
     WHERE id = ?
   `).run(
     input.eyebrow, input.title, input.body, input.linkHref, input.linkLabel,
-    input.image, input.altText, input.sortOrder, input.isPublished, timestamp(), id
+    input.image, input.altText, input.imageWidth, input.imageHeight,
+    input.sortOrder, input.isPublished, timestamp(), id
   );
   writeAudit(db, {
     adminId: req.admin.id,

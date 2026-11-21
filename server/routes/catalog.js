@@ -77,6 +77,8 @@ function mapBanner(row) {
     linkLabel: row.link_label,
     image: row.image,
     altText: row.alt_text,
+    imageWidth: row.image_width || 100,
+    imageHeight: row.image_height || 240,
     sortOrder: row.sort_order,
     isPublished: !!row.is_published
   };
@@ -84,7 +86,8 @@ function mapBanner(row) {
 
 router.get('/banners', route((req, res) => {
   const rows = getDb().prepare(`
-    SELECT id, eyebrow, title, body, link_href, link_label, image, alt_text, sort_order, is_published
+    SELECT id, eyebrow, title, body, link_href, link_label, image, alt_text,
+           image_width, image_height, sort_order, is_published
     FROM banners
     WHERE is_published = 1
     ORDER BY sort_order, id

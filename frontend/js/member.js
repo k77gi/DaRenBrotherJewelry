@@ -14,7 +14,7 @@ function bindGuestForms() {
     try {
       const result = await api('/members/login', {
         method: 'POST',
-        body: { email: form.email.value, password: form.password.value }
+        body: { account: form.account.value, password: form.password.value }
       });
       saveMember(result);
     } catch (error) {
@@ -22,7 +22,20 @@ function bindGuestForms() {
       loginAlert.textContent = readableError(error);
     }
   });
-  document.getElementById('register-form').addEventListener('submit', async (event) => {
+  const registerForm = document.getElementById('register-form');
+  const syncMethod = () => {
+    const method = registerForm.method.value;
+    registerForm.querySelectorAll('[data-method]').forEach((field) => {
+      const active = field.dataset.method === method;
+      field.hidden = !active;
+      const input = field.querySelector('input');
+      input.required = active;
+      if (!active) input.value = '';
+    });
+  };
+  registerForm.addEventListener('change', syncMethod);
+  syncMethod();
+  registerForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     registerAlert.hidden = true;
     const form = event.target;
@@ -30,10 +43,12 @@ function bindGuestForms() {
       const result = await api('/members/register', {
         method: 'POST',
         body: {
+          method: form.method.value,
           name: form.name.value,
           email: form.email.value,
-          password: form.password.value,
-          phone: form.phone.value
+          phone: form.phone.value,
+          lineId: form.lineId.value,
+          password: form.password.value
         }
       });
       saveMember(result);
@@ -59,7 +74,12 @@ async function loadMember() {
     const panel = document.getElementById('member-panel');
     panel.hidden = false;
     document.getElementById('member-title').textContent = `${member.name} 的訂單`;
-    document.getElementById('member-meta').textContent = `${member.email}${member.phone ? `　${member.phone}` : ''}`;
+    const contact = [
+      member.email,
+      member.phone,
+      member.lineId ? `LINE ${member.lineId}` : ''
+    ].filter(Boolean).join('　');
+    document.getElementById('member-meta').textContent = contact;
     document.getElementById('member-orders').innerHTML = orders.length
       ? orders.map(renderOrder).join('')
       : '<p>還沒有訂單。</p>';

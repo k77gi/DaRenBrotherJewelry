@@ -43,7 +43,7 @@ async function loadCheckout() {
     try {
       const member = await api('/members/me', { auth: 'member' });
       form.buyerName.value = member.name;
-      form.buyerEmail.value = member.email;
+      if (member.email) form.buyerEmail.value = member.email;
       form.buyerPhone.value = member.phone || '';
     } catch (error) {
       localStorage.removeItem('daren-member-token');

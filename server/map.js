@@ -90,11 +90,13 @@ function mapArticle(row) {
 }
 
 function mapMember(row) {
+  const email = String(row.email || '');
   return {
     id: row.id,
     name: row.name,
-    email: row.email,
-    phone: row.phone,
+    email: email.endsWith('@members.local') ? '' : email,
+    phone: row.phone || '',
+    lineId: row.line_id || '',
     createdAt: row.created_at
   };
 }

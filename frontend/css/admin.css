@@ -53,4 +53,11 @@
   .admin-shell { grid-template-columns: 1fr; }
   .admin-nav { flex-direction: row; overflow-x: auto; }
   .admin-logout { margin-top: 0; }
+  .admin-main { padding: 16px; }
+  .captcha-row { flex-wrap: wrap; }
+}
+
+@media (max-width: 520px) {
+  .admin-main { padding: 12px; }
+  .check-grid { grid-template-columns: 1fr; }
 }
