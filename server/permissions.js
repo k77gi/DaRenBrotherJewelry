@@ -7,6 +7,8 @@ const PERMISSIONS = [
   ['orders.read', '檢視訂單', '可查看訂單與明細'],
   ['orders.write', '更新訂單', '可變更訂單狀態與物流單號'],
   ['members.read', '檢視會員', '可查看會員名單'],
+  ['inquiries.read', '檢視聯絡訊息', '可查看與我聯絡的表單'],
+  ['inquiries.write', '編輯聯絡訊息', '可修改與我聯絡的表單內容'],
   ['admins.read', '檢視管理員', '可查看管理員與角色'],
   ['admins.write', '管理管理員', '可新增、停用或啟用管理員'],
   ['permissions.write', '設定權限', '可勾選各角色可使用的模組'],
@@ -35,6 +37,11 @@ const MODULES = [
     permissions: ['members.read']
   },
   {
+    code: 'inquiries',
+    name: '聯絡訊息',
+    permissions: ['inquiries.read', 'inquiries.write']
+  },
+  {
     code: 'admins',
     name: '管理員與權限',
     permissions: ['admins.read', 'admins.write', 'permissions.write']
@@ -59,7 +66,7 @@ const ROLES = [
     name: '主要管理者',
     description: '可管理商品、文章與訂單，不可更改權限設定',
     level: 2,
-    modules: ['products', 'articles', 'orders']
+    modules: ['products', 'articles', 'orders', 'inquiries']
   },
   {
     code: 'content_editor',

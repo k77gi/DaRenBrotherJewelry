@@ -12,6 +12,7 @@ const ACTION_LABEL = {
   'banner.create': '新增主視覺',
   'banner.update': '修改主視覺',
   'banner.delete': '刪除主視覺',
+  'inquiry.update': '修改聯絡訊息',
   'order.status': '更新訂單狀態',
   'order.tracking': '更新物流單號',
   'admin.status': '變更管理員狀態',
@@ -27,7 +28,9 @@ const state = {
   productDraft: null,
   articleDraft: null,
   bannerDraft: null,
-  banners: []
+  banners: [],
+  inquiryDraft: null,
+  inquiryQuery: ''
 };
 
 const PANELS = [
@@ -38,6 +41,7 @@ const PANELS = [
   { id: 'articles', label: '文章管理', allow: () => can('articles.read') || can('articles.write') },
   { id: 'orders', label: '訂單管理', allow: () => can('orders.read') },
   { id: 'members', label: '會員管理', allow: () => can('members.read') },
+  { id: 'inquiries', label: '聯絡訊息', allow: () => can('inquiries.read') || can('inquiries.write') },
   { id: 'admins', label: '管理員', allow: () => can('admins.read') },
   { id: 'permissions', label: '權限設定', allow: () => can('permissions.write') },
   { id: 'audit', label: '操作日誌', allow: () => can('audit.read') }
@@ -87,6 +91,7 @@ async function render() {
     if (id === 'articles') await renderArticles();
     if (id === 'orders') await renderOrders();
     if (id === 'members') await renderMembers();
+    if (id === 'inquiries') await renderInquiries();
     if (id === 'admins') await renderAdmins();
     if (id === 'permissions') await renderPermissions();
     if (id === 'audit') await renderAudit();
@@ -115,6 +120,7 @@ async function renderOverview() {
   if (stats.orderCount != null) cards.push(['訂單', stats.orderCount]);
   if (stats.pendingOrderCount != null) cards.push(['待處理訂單', stats.pendingOrderCount]);
   if (stats.memberCount != null) cards.push(['會員', stats.memberCount]);
+  if (stats.inquiryCount != null) cards.push(['聯絡訊息', stats.inquiryCount]);
   const box = document.getElementById('stats');
   if (box) {
     box.innerHTML = cards.map(([label, value]) => `<div class="stat"><strong>${value}</strong><span>${esc(label)}</span></div>`).join('');
@@ -127,7 +133,6 @@ function bannerForm() {
     <form id="banner-form" class="panel">
       <h2>${draft ? '修改主視覺' : '新增主視覺'}</h2>
       <input type="hidden" name="bannerId" value="${draft ? draft.id : ''}">
-      <input type="hidden" name="image" value="${draft ? esc(draft.image) : ''}">
       <div class="form-grid">
         <label class="field">小標<input name="eyebrow" maxlength="40" value="${draft ? esc(draft.eyebrow) : ''}"></label>
         <label class="field">標題<input name="title" required maxlength="80" value="${draft ? esc(draft.title) : ''}"></label>
@@ -209,6 +214,12 @@ function productForm() {
       </div>
       <div id="main-images" class="preview-row">${draft && draft.mainImage ? imageCard(draft.mainImage, 'mainImage') : ''}</div>
       <div id="detail-images" class="preview-row">${draft && draft.detailImages.length ? draft.detailImages.map((src) => imageCard(src, 'detailImage')).join('') : ''}</div>
+      <div class="wide">
+        <h3>自訂欄位</h3>
+        <p class="muted">可自行新增項目，例如產地、尺寸或克拉。儲存後會顯示在商品頁。</p>
+        <div id="extra-fields">${draft && draft.extraFields ? draft.extraFields.map((field) => fieldRow(field)).join('') : ''}</div>
+        <button class="btn secondary" type="button" data-action="add-field">新增欄位</button>
+      </div>
       <label class="check"><input type="checkbox" name="isPublished" ${!draft || draft.isPublished ? 'checked' : ''}> 上架，前台看得到</label>
       <div class="btn-row">
         <button class="btn" type="submit">${draft ? '儲存修改' : '新增商品'}</button>
@@ -409,6 +420,64 @@ async function renderMembers() {
   `;
 }
 
+function inquiryForm() {
+  const draft = state.inquiryDraft;
+  if (!draft || !can('inquiries.write')) return '';
+  return `
+    <form id="inquiry-form" class="panel">
+      <h2>修改聯絡訊息</h2>
+      <input type="hidden" name="inquiryId" value="${draft.id}">
+      <p class="muted">收到時間 ${esc(draft.createdAt)}</p>
+      <div class="form-grid">
+        <label class="field">姓名<input name="name" required maxlength="40" value="${esc(draft.name)}"></label>
+        <label class="field">聯絡電話<input name="phone" required maxlength="20" value="${esc(draft.phone)}"></label>
+        <label class="field">Email<input name="email" type="email" required maxlength="120" value="${esc(draft.email)}"></label>
+        <label class="field wide">諮詢內容<textarea name="message" required maxlength="1000">${esc(draft.message)}</textarea></label>
+      </div>
+      <div class="btn-row">
+        <button class="btn" type="submit">儲存修改</button>
+        <button class="btn secondary" type="button" data-action="cancel-inquiry">取消</button>
+      </div>
+    </form>
+  `;
+}
+
+function paintInquiries() {
+  const rows = state.inquiries.map((item) => `
+    <tr>
+      <td>${esc(item.createdAt)}</td>
+      <td>${esc(item.name)}</td>
+      <td>${esc(item.phone)}</td>
+      <td>${esc(item.email)}</td>
+      <td>${esc(item.message)}</td>
+      <td>${can('inquiries.write') ? `<button class="btn secondary" type="button" data-action="edit-inquiry" data-id="${item.id}">編輯</button>` : ''}</td>
+    </tr>
+  `).join('');
+  document.getElementById('panel').innerHTML = `
+    <h1>聯絡訊息</h1>
+    <p class="muted">前台「與我聯絡」送出的內容會存在這裡，最多顯示最近 200 則。</p>
+    <form id="inquiry-search" class="btn-row">
+      <label class="field">查詢<input name="q" maxlength="40" value="${esc(state.inquiryQuery)}" placeholder="姓名、電話、Email 或內容"></label>
+      <button class="btn" type="submit">查詢</button>
+    </form>
+    ${inquiryForm()}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>時間</th><th>姓名</th><th>電話</th><th>Email</th><th>內容</th><th></th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="6">沒有符合的聯絡訊息。</td></tr>'}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function renderInquiries() {
+  const query = new URLSearchParams();
+  if (state.inquiryQuery) query.set('q', state.inquiryQuery);
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  state.inquiries = await api(`/admin/inquiries${suffix}`, { auth: 'admin' });
+  paintInquiries();
+}
+
 async function renderAdmins() {
   const admins = await api('/admin/admins', { auth: 'admin' });
   const rows = admins.map((admin) => {
@@ -522,6 +591,16 @@ async function uploadImage(file) {
   return payload.url;
 }
 
+function fieldRow(field = { label: '', value: '' }) {
+  return `
+    <div class="field-row">
+      <label class="field">欄位名稱<input name="fieldLabel" maxlength="20" value="${esc(field.label || '')}"></label>
+      <label class="field">欄位內容<input name="fieldValue" maxlength="200" value="${esc(field.value || '')}"></label>
+      <button class="btn danger" type="button" data-action="remove-field">刪除</button>
+    </div>
+  `;
+}
+
 function imageCard(src, inputName) {
   return `
     <div class="image-card">
@@ -584,6 +663,10 @@ async function saveProduct(form) {
   const mainInput = form.querySelector('input[name="mainImage"]');
   const mainImage = mainInput ? mainInput.value : '';
   const detailImages = [...form.querySelectorAll('input[name="detailImage"]')].map((item) => item.value);
+  const extraFields = [...form.querySelectorAll('.field-row')].map((row) => ({
+    label: row.querySelector('[name="fieldLabel"]').value.trim(),
+    value: row.querySelector('[name="fieldValue"]').value.trim()
+  })).filter((field) => field.label || field.value);
   const body = {
     categoryId: Number(form.categoryId.value),
     name: form.name.value,
@@ -595,6 +678,7 @@ async function saveProduct(form) {
     stock: Number(form.stock.value),
     colors: form.colors.value,
     care: form.care.value,
+    extraFields,
     mainImage,
     detailImages,
     isPublished: form.isPublished.checked
@@ -628,6 +712,21 @@ async function saveArticle(form) {
   }
   state.articleDraft = null;
   await renderArticles();
+}
+
+async function saveInquiry(form) {
+  await api(`/admin/inquiries/${form.inquiryId.value}`, {
+    method: 'PUT',
+    auth: 'admin',
+    body: {
+      name: form.name.value,
+      phone: form.phone.value,
+      email: form.email.value,
+      message: form.message.value
+    }
+  });
+  state.inquiryDraft = null;
+  await renderInquiries();
 }
 
 async function saveAdmin(form) {
@@ -675,6 +774,12 @@ async function onSubmit(event) {
     else if (form.id === 'product-form') await saveProduct(form);
     else if (form.id === 'article-form') await saveArticle(form);
     else if (form.id === 'category-form') await saveCategory(form);
+    else if (form.id === 'inquiry-search') {
+      state.inquiryQuery = form.q.value.trim();
+      state.inquiryDraft = null;
+      await renderInquiries();
+    }
+    else if (form.id === 'inquiry-form') await saveInquiry(form);
     else if (form.id === 'admin-form') await saveAdmin(form);
     else if (form.classList.contains('role-form')) await saveRole(form);
     clearAlert();
@@ -710,7 +815,31 @@ async function onClick(event) {
       picker.click();
     }
     if (action === 'remove-image') {
-      button.closest('.image-card').remove();
+      const card = button.closest('.image-card');
+      const src = card.querySelector('input').value;
+      const form = card.closest('form');
+      const bannerId = form && form.id === 'banner-form' ? form.bannerId.value : '';
+      const saved = bannerId && state.bannerDraft && state.bannerDraft.image === src;
+      if (saved) {
+        await api(`/admin/banners/${bannerId}/image`, { method: 'DELETE', auth: 'admin' });
+        state.bannerDraft.image = '';
+        const listed = state.banners.find((item) => item.id === Number(bannerId));
+        if (listed) listed.image = '';
+      } else if (src.startsWith('/uploads/')) {
+        await api('/admin/uploads', { method: 'DELETE', auth: 'admin', body: { image: src } });
+      }
+      card.remove();
+    }
+    if (action === 'add-field') {
+      const list = document.getElementById('extra-fields');
+      if (list.querySelectorAll('.field-row').length >= 12) {
+        setAlert(new Error('自訂欄位最多 12 個'));
+        return;
+      }
+      list.insertAdjacentHTML('beforeend', fieldRow());
+    }
+    if (action === 'remove-field') {
+      button.closest('.field-row').remove();
     }
     if (action === 'edit-banner') {
       state.bannerDraft = state.banners.find((item) => item.id === id) || null;
@@ -762,6 +891,14 @@ async function onClick(event) {
         body: { trackingNo: input ? input.value : '' }
       });
       await renderOrders();
+    }
+    if (action === 'edit-inquiry') {
+      state.inquiryDraft = state.inquiries.find((item) => item.id === id) || null;
+      paintInquiries();
+    }
+    if (action === 'cancel-inquiry') {
+      state.inquiryDraft = null;
+      paintInquiries();
     }
     if (action === 'toggle-admin') {
       const active = button.dataset.active === '1';

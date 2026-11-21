@@ -291,7 +291,7 @@ th { font-size: 13px; color: var(--muted); font-weight: 600; background: #faf7f2
 .demo-box li { margin: 6px 0; }
 
 .brand { font-size: 18px; font-weight: 650; text-decoration: none; }
-.nav-btn { border: 1px solid rgba(247, 243, 236, 0.45); padding: 6px 10px; text-decoration: none; font-size: 14px; }
+.nav-btn { border: 0; background: transparent; padding: 6px 10px; text-decoration: none; font-size: 14px; }
 .cart-link { position: relative; width: 42px; height: 42px; display: inline-flex; align-items: center; justify-content: center; color: inherit; text-decoration: none; }
 .cart-link svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.6; }
 .cart-link span { position: absolute; top: -2px; right: -2px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; background: #e6d3b0; color: #1f1b17; font-size: 12px; line-height: 18px; text-align: center; }
@@ -321,6 +321,10 @@ th { font-size: 13px; color: var(--muted); font-weight: 600; background: #faf7f2
 .thumbs img { width: 72px; height: 72px; object-fit: cover; display: block; }
 .thumbs button.is-active { border-color: var(--ink); }
 .choice-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 14px; }
+.extra-fields { display: grid; gap: 8px; margin: 0 0 14px; }
+.extra-fields div { display: grid; grid-template-columns: 7em 1fr; gap: 8px; }
+.extra-fields dt { color: var(--muted); }
+.extra-fields dd { margin: 0; }
 .option { border: 1px solid var(--line); background: white; padding: 6px 10px; cursor: pointer; }
 .option.is-active { background: var(--ink); color: white; border-color: var(--ink); }
 .stepper { display: inline-flex; align-items: center; border: 1px solid var(--line); background: white; }
@@ -364,4 +368,5 @@ th { font-size: 13px; color: var(--muted); font-weight: 600; background: #faf7f2
   .product-grid, .article-grid, .gallery-grid, .pay-grid { grid-template-columns: 1fr; }
   main.wrap { padding: 20px 0 48px; }
   .section-head { align-items: flex-start; flex-direction: column; }
+  .extra-fields div { grid-template-columns: 1fr; gap: 0; }
 }

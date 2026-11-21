@@ -46,6 +46,7 @@
 .preview-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-start; }
 .image-card { display: grid; gap: 6px; width: 120px; }
 .image-card .btn { width: 100%; text-align: center; }
+.field-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: end; margin-bottom: 8px; }
 
 .preview-row img { width: 72px; height: 72px; object-fit: cover; background: #fff; }
 
@@ -61,5 +62,5 @@
 
 @media (max-width: 520px) {
   .admin-main { padding: 12px; }
-  .check-grid { grid-template-columns: 1fr; }
+  .check-grid, .field-row { grid-template-columns: 1fr; }
 }

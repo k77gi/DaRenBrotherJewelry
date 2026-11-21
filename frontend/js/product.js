@@ -70,6 +70,13 @@ async function loadProduct() {
           <div class="choice-row">
             ${materials.map((item) => `<span class="option is-active">${esc(item)}</span>`).join('') || `<span class="option is-active">${esc(product.material)}</span>`}
           </div>
+          ${(product.extraFields || []).length ? `
+            <dl class="extra-fields">
+              ${product.extraFields.map((field) => `
+                <div><dt>${esc(field.label)}</dt><dd>${esc(field.value)}</dd></div>
+              `).join('')}
+            </dl>
+          ` : ''}
           <p class="muted">大仁哥的珠寶小舖挑選日常好戴的入門飾品，材質與保養方式直接寫在商品頁。</p>
           <div class="inline">
             <div class="stepper">

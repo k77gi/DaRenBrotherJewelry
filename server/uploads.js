@@ -81,4 +81,35 @@ function cleanImagePath(value) {
   throw new HttpError(400, '圖片路徑不正確');
 }
 
-module.exports = { uploadDir, saveUpload, cleanImagePath };
+function removeUpload(url) {
+  const text = cleanImagePath(url);
+  if (!text.startsWith('/uploads/')) return false;
+  const file = path.resolve(uploadDir, text.slice('/uploads/'.length));
+  const root = path.resolve(uploadDir);
+  if (file !== root && !file.startsWith(root + path.sep)) return false;
+  if (!fs.existsSync(file)) return false;
+  fs.unlinkSync(file);
+  return true;
+}
+
+function releaseImage(db, url) {
+  const text = String(url || '').trim();
+  if (!text.startsWith('/uploads/')) return false;
+  const usedByBanner = db.prepare('SELECT 1 AS n FROM banners WHERE image = ?').get(text);
+  const usedByProduct = db.prepare('SELECT 1 AS n FROM products WHERE main_image = ?').get(text);
+  const usedByArticle = db.prepare('SELECT 1 AS n FROM articles WHERE cover_image = ?').get(text);
+  if (usedByBanner || usedByProduct || usedByArticle) return false;
+  const details = db.prepare("SELECT detail_images FROM products WHERE detail_images != ''").all();
+  const usedInDetail = details.some((row) => {
+    try {
+      const list = JSON.parse(row.detail_images);
+      return Array.isArray(list) && list.includes(text);
+    } catch (error) {
+      return false;
+    }
+  });
+  if (usedInDetail) return false;
+  return removeUpload(text);
+}
+
+module.exports = { uploadDir, saveUpload, cleanImagePath, removeUpload, releaseImage };

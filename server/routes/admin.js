@@ -6,6 +6,7 @@ const {
   requiredText,
   optionalText,
   requiredEmail,
+  requiredPhone,
   requiredInt,
   optionalNumber,
   idParam,
@@ -24,7 +25,7 @@ const { writeAudit } = require('../audit');
 const { listOrders, setOrderStatus, setTracking } = require('../orderService');
 const { MODULES, modulesFor } = require('../permissions');
 const { createCaptcha, consumeCaptcha } = require('../captcha');
-const { saveUpload, cleanImagePath } = require('../uploads');
+const { saveUpload, cleanImagePath, releaseImage } = require('../uploads');
 const { hashPassword, verifyPassword, sanitizePlain } = require('../security');
 
 const router = express.Router();
@@ -168,6 +169,9 @@ router.get('/summary', route((req, res) => {
   if (allows(req, 'members.read')) {
     summary.memberCount = db.prepare('SELECT COUNT(*) AS n FROM members').get().n;
   }
+  if (allows(req, 'inquiries.read', 'inquiries.write')) {
+    summary.inquiryCount = db.prepare('SELECT COUNT(*) AS n FROM inquiries').get().n;
+  }
   res.json(summary);
 }));
 
@@ -176,6 +180,15 @@ function colorText(value) {
   const parts = text.split(/[|,、，]/).map((item) => item.trim()).filter(Boolean);
   if (parts.length > 8) throw new HttpError(400, '顏色最多 8 種');
   return parts.join('|');
+}
+
+function extraFields(value) {
+  const list = Array.isArray(value) ? value : [];
+  if (list.length > 12) throw new HttpError(400, '自訂欄位最多 12 個');
+  return list.map((item) => ({
+    label: sanitizePlain(item?.label, 20, '欄位名稱', { required: true }),
+    value: sanitizePlain(item?.value, 200, '欄位內容', { required: true })
+  }));
 }
 
 function imageList(value) {
@@ -198,6 +211,7 @@ function productBody(body) {
     care: optionalText(body.care, 2000, '保養說明'),
     mainImage: cleanImagePath(body.mainImage),
     detailImages: imageList(body.detailImages),
+    extraFields: extraFields(body.extraFields),
     isPublished: readFlag(body.isPublished) ? 1 : 0
   };
 }
@@ -230,12 +244,13 @@ router.post('/products', requirePermission('products.write'), route((req, res) =
   const info = db.prepare(`
     INSERT INTO products (
       category_id, name, slug, summary, description, price, material, weight_grams, stock,
-      colors, care, main_image, detail_images, is_published
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      colors, care, main_image, detail_images, extra_fields, is_published
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     input.categoryId, input.name, slug, input.summary, input.description,
     input.price, input.material, input.weightGrams, input.stock,
-    input.colors, input.care, input.mainImage, JSON.stringify(input.detailImages), input.isPublished
+    input.colors, input.care, input.mainImage, JSON.stringify(input.detailImages),
+    JSON.stringify(input.extraFields), input.isPublished
   );
   const id = Number(info.lastInsertRowid);
   db.prepare('UPDATE products SET slug = ? WHERE id = ?').run(`product-${id}`, id);
@@ -262,12 +277,13 @@ router.put('/products/:id', requirePermission('products.write'), route((req, res
     UPDATE products
     SET category_id = ?, name = ?, summary = ?, description = ?, price = ?,
         material = ?, weight_grams = ?, stock = ?, colors = ?, care = ?,
-        main_image = ?, detail_images = ?, is_published = ?, updated_at = ?
+        main_image = ?, detail_images = ?, extra_fields = ?, is_published = ?, updated_at = ?
     WHERE id = ?
   `).run(
     input.categoryId, input.name, input.summary, input.description, input.price,
     input.material, input.weightGrams, input.stock, input.colors, input.care,
-    input.mainImage, JSON.stringify(input.detailImages), input.isPublished, timestamp(), id
+    input.mainImage, JSON.stringify(input.detailImages), JSON.stringify(input.extraFields),
+    input.isPublished, timestamp(), id
   );
   writeAudit(db, {
     adminId: req.admin.id,
@@ -477,6 +493,14 @@ router.post('/uploads', requireAny('products.write', 'articles.write'), route(as
   res.status(201).json({ url });
 }));
 
+router.delete('/uploads', requireAny('products.write', 'articles.write'), route((req, res) => {
+  const image = cleanImagePath(req.body?.image);
+  if (!image.startsWith('/uploads/')) throw new HttpError(400, '只能刪除上傳的圖片');
+  const removed = releaseImage(getDb(), image);
+  if (!removed) throw new HttpError(409, '這張圖片仍被使用');
+  res.json({ ok: true });
+}));
+
 router.get('/roles', requireAny('admins.read', 'permissions.write'), route((req, res) => {
   const db = getDb();
   const roles = db.prepare(`
@@ -620,6 +644,7 @@ router.patch('/admins/:id', requirePermission('admins.write'), route((req, res) 
 
 function bannerImage(value) {
   const text = String(value || '').trim();
+  if (!text) return '';
   if (/^\/images\/banners\/[a-z0-9.-]+\.svg$/i.test(text)) return text;
   return cleanImagePath(text);
 }
@@ -634,7 +659,6 @@ function bannerLink(value) {
 
 function bannerBody(body) {
   const image = bannerImage(body.image);
-  if (!image) throw new HttpError(400, '請上傳主視覺圖片');
   return {
     eyebrow: sanitizePlain(body.eyebrow, 40, '小標'),
     title: sanitizePlain(body.title, 80, '標題', { required: true }),
@@ -705,7 +729,7 @@ router.put('/banners/:id', requirePermission('products.write'), route((req, res)
   const id = idParam(req.params.id);
   const input = bannerBody(req.body || {});
   const db = getDb();
-  const current = db.prepare('SELECT id FROM banners WHERE id = ?').get(id);
+  const current = db.prepare('SELECT id, image FROM banners WHERE id = ?').get(id);
   if (!current) throw new HttpError(404, '找不到這張主視覺');
   db.prepare(`
     UPDATE banners
@@ -718,6 +742,7 @@ router.put('/banners/:id', requirePermission('products.write'), route((req, res)
     input.image, input.altText, input.imageWidth, input.imageHeight,
     input.sortOrder, input.isPublished, timestamp(), id
   );
+  if (current.image && current.image !== input.image) releaseImage(db, current.image);
   writeAudit(db, {
     adminId: req.admin.id,
     action: 'banner.update',
@@ -729,12 +754,32 @@ router.put('/banners/:id', requirePermission('products.write'), route((req, res)
   res.json(mapAdminBanner(db.prepare('SELECT * FROM banners WHERE id = ?').get(id)));
 }));
 
+router.delete('/banners/:id/image', requirePermission('products.write'), route((req, res) => {
+  const id = idParam(req.params.id);
+  const db = getDb();
+  const current = db.prepare('SELECT id, image FROM banners WHERE id = ?').get(id);
+  if (!current) throw new HttpError(404, '找不到這張主視覺');
+  const previous = current.image;
+  db.prepare('UPDATE banners SET image = ?, updated_at = ? WHERE id = ?').run('', timestamp(), id);
+  releaseImage(db, previous);
+  writeAudit(db, {
+    adminId: req.admin.id,
+    action: 'banner.update',
+    targetType: 'banner',
+    targetId: id,
+    detail: { image: '' },
+    ip: requestIp(req)
+  });
+  res.json({ ok: true });
+}));
+
 router.delete('/banners/:id', requirePermission('products.write'), route((req, res) => {
   const id = idParam(req.params.id);
   const db = getDb();
-  const current = db.prepare('SELECT id, title FROM banners WHERE id = ?').get(id);
+  const current = db.prepare('SELECT id, title, image FROM banners WHERE id = ?').get(id);
   if (!current) throw new HttpError(404, '找不到這張主視覺');
   db.prepare('DELETE FROM banners WHERE id = ?').run(id);
+  releaseImage(db, current.image);
   writeAudit(db, {
     adminId: req.admin.id,
     action: 'banner.delete',
@@ -744,6 +789,73 @@ router.delete('/banners/:id', requirePermission('products.write'), route((req, r
     ip: requestIp(req)
   });
   res.json({ ok: true });
+}));
+
+function mapInquiry(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    phone: row.phone,
+    email: row.email,
+    message: row.message,
+    createdAt: row.created_at
+  };
+}
+
+function inquiryBody(body) {
+  return {
+    name: sanitizePlain(body.name, 40, '姓名', { required: true }),
+    phone: requiredPhone(sanitizePlain(body.phone, 20, '電話', { required: true })),
+    email: requiredEmail(sanitizePlain(body.email, 120, '電子郵件', { required: true })),
+    message: sanitizePlain(body.message, 1000, '諮詢內容', { required: true })
+  };
+}
+
+router.get('/inquiries', requireAny('inquiries.read', 'inquiries.write'), route((req, res) => {
+  const q = String(req.query.q || '').trim().slice(0, 40);
+  const db = getDb();
+  const rows = q
+    ? db.prepare(`
+        SELECT id, name, phone, email, message, created_at
+        FROM inquiries
+        WHERE name LIKE ? ESCAPE '\\'
+           OR phone LIKE ? ESCAPE '\\'
+           OR email LIKE ? ESCAPE '\\'
+           OR message LIKE ? ESCAPE '\\'
+        ORDER BY id DESC
+        LIMIT 200
+      `).all(...Array(4).fill(`%${q.replace(/[\\%_]/g, (char) => `\\${char}`)}%`))
+    : db.prepare(`
+        SELECT id, name, phone, email, message, created_at
+        FROM inquiries
+        ORDER BY id DESC
+        LIMIT 200
+      `).all();
+  res.json(rows.map(mapInquiry));
+}));
+
+router.put('/inquiries/:id', requirePermission('inquiries.write'), route((req, res) => {
+  const id = idParam(req.params.id);
+  const input = inquiryBody(req.body || {});
+  const db = getDb();
+  const current = db.prepare('SELECT id FROM inquiries WHERE id = ?').get(id);
+  if (!current) throw new HttpError(404, '找不到這則聯絡訊息');
+  db.prepare(`
+    UPDATE inquiries
+    SET name = ?, phone = ?, email = ?, message = ?
+    WHERE id = ?
+  `).run(input.name, input.phone, input.email, input.message, id);
+  writeAudit(db, {
+    adminId: req.admin.id,
+    action: 'inquiry.update',
+    targetType: 'inquiry',
+    targetId: id,
+    detail: { name: input.name },
+    ip: requestIp(req)
+  });
+  res.json(mapInquiry(db.prepare(`
+    SELECT id, name, phone, email, message, created_at FROM inquiries WHERE id = ?
+  `).get(id)));
 }));
 
 router.get('/audit-logs', requirePermission('audit.read'), route((req, res) => {

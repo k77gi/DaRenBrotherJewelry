@@ -48,6 +48,7 @@ function initDb() {
     seeded = true;
   }
   alignRoles(database);
+  grantInquiryAccess(database);
   assertPasswordHashes(database);
   backfillVisuals(database);
   return { seeded };
@@ -65,6 +66,7 @@ function migrate(db) {
   if (!products.includes('care')) db.exec("ALTER TABLE products ADD COLUMN care TEXT NOT NULL DEFAULT ''");
   if (!products.includes('main_image')) db.exec("ALTER TABLE products ADD COLUMN main_image TEXT NOT NULL DEFAULT ''");
   if (!products.includes('detail_images')) db.exec("ALTER TABLE products ADD COLUMN detail_images TEXT NOT NULL DEFAULT '[]'");
+  if (!products.includes('extra_fields')) db.exec("ALTER TABLE products ADD COLUMN extra_fields TEXT NOT NULL DEFAULT '[]'");
   const articles = columnNames(db, 'articles');
   if (!articles.includes('cover_image')) db.exec("ALTER TABLE articles ADD COLUMN cover_image TEXT NOT NULL DEFAULT ''");
   const orders = columnNames(db, 'orders');
@@ -184,6 +186,32 @@ function alignRoles(db) {
     try { db.exec('ROLLBACK'); } catch (rollbackError) { /* 沒有進行中的交易時略過 */ }
     throw error;
   }
+}
+
+function grantInquiryAccess(db) {
+  const done = db.prepare("SELECT value FROM schema_meta WHERE key = 'inquiries_admin'").get();
+  if (done) return;
+  const findPermission = db.prepare('SELECT id FROM permissions WHERE code = ?');
+  const insertPermission = db.prepare(
+    'INSERT INTO permissions (code, name, description) VALUES (?, ?, ?)'
+  );
+  for (const [code, name, description] of PERMISSIONS) {
+    if (!code.startsWith('inquiries.')) continue;
+    if (!findPermission.get(code)) insertPermission.run(code, name, description);
+  }
+  const insertLink = db.prepare(
+    'INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES (?, ?)'
+  );
+  for (const role of ROLES) {
+    if (!role.modules.includes('*') && !role.modules.includes('inquiries')) continue;
+    const row = db.prepare('SELECT id FROM roles WHERE code = ?').get(role.code);
+    if (!row) continue;
+    for (const code of ['inquiries.read', 'inquiries.write']) {
+      const permission = findPermission.get(code);
+      if (permission) insertLink.run(row.id, permission.id);
+    }
+  }
+  db.prepare("INSERT INTO schema_meta (key, value) VALUES ('inquiries_admin', ?)").run(timestamp());
 }
 
 function seedBanners(db) {

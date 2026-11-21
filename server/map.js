@@ -3,7 +3,7 @@ const { imageSet } = require('./visuals');
 const PRODUCT_SELECT = `
   p.id, p.category_id, c.name AS category_name, c.slug AS category_slug,
   p.name, p.slug, p.summary, p.description, p.price, p.material,
-  p.weight_grams, p.stock, p.colors, p.care, p.main_image, p.detail_images,
+  p.weight_grams, p.stock, p.colors, p.care, p.main_image, p.detail_images, p.extra_fields,
   p.is_published, p.created_at, p.updated_at
 `;
 
@@ -23,6 +23,19 @@ function mapCategory(row) {
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
+}
+
+function extraFieldsOf(row) {
+  let fields = [];
+  try {
+    fields = JSON.parse(row.extra_fields || '[]');
+  } catch (error) {
+    fields = [];
+  }
+  if (!Array.isArray(fields)) return [];
+  return fields
+    .filter((item) => item && item.label && item.value)
+    .map((item) => ({ label: String(item.label), value: String(item.value) }));
 }
 
 function detailsOf(row) {
@@ -64,6 +77,7 @@ function mapProduct(row) {
     care: row.care || '',
     mainImage: row.main_image || '',
     detailImages: detailsOf(row),
+    extraFields: extraFieldsOf(row),
     images: productImages(row),
     isPublished: !!row.is_published,
     createdAt: row.created_at,

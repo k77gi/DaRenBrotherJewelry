@@ -68,6 +68,7 @@ CREATE TABLE products (
   care TEXT NOT NULL DEFAULT '',
   main_image TEXT NOT NULL DEFAULT '',
   detail_images TEXT NOT NULL DEFAULT '[]',
+  extra_fields TEXT NOT NULL DEFAULT '[]',
   is_published INTEGER NOT NULL DEFAULT 1 CHECK (is_published IN (0, 1)),
   created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
