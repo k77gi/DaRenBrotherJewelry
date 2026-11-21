@@ -9,6 +9,9 @@ const ACTION_LABEL = {
   'article.create': '新增文章',
   'article.update': '修改文章',
   'article.delete': '刪除文章',
+  'banner.create': '新增主視覺',
+  'banner.update': '修改主視覺',
+  'banner.delete': '刪除主視覺',
   'order.status': '更新訂單狀態',
   'order.tracking': '更新物流單號',
   'admin.status': '變更管理員狀態',
@@ -22,11 +25,14 @@ const state = {
   categories: [],
   articles: [],
   productDraft: null,
-  articleDraft: null
+  articleDraft: null,
+  bannerDraft: null,
+  banners: []
 };
 
 const PANELS = [
   { id: 'overview', label: '總覽', allow: () => true },
+  { id: 'banners', label: '主視覺', allow: () => can('products.write') },
   { id: 'products', label: '商品管理', allow: () => can('catalog.read') || can('products.write') },
   { id: 'categories', label: '分類', allow: () => can('categories.write') },
   { id: 'articles', label: '文章管理', allow: () => can('articles.read') || can('articles.write') },
@@ -75,6 +81,7 @@ async function render() {
   try {
     const id = currentPanel();
     if (id === 'overview') await renderOverview();
+    if (id === 'banners') await renderBanners();
     if (id === 'products') await renderProducts();
     if (id === 'categories') await renderCategories();
     if (id === 'articles') await renderArticles();
@@ -112,6 +119,65 @@ async function renderOverview() {
   if (box) {
     box.innerHTML = cards.map(([label, value]) => `<div class="stat"><strong>${value}</strong><span>${esc(label)}</span></div>`).join('');
   }
+}
+
+function bannerForm() {
+  const draft = state.bannerDraft;
+  return `
+    <form id="banner-form" class="panel">
+      <h2>${draft ? '修改主視覺' : '新增主視覺'}</h2>
+      <input type="hidden" name="bannerId" value="${draft ? draft.id : ''}">
+      <input type="hidden" name="image" value="${draft ? esc(draft.image) : ''}">
+      <div class="form-grid">
+        <label class="field">小標<input name="eyebrow" maxlength="40" value="${draft ? esc(draft.eyebrow) : ''}"></label>
+        <label class="field">標題<input name="title" required maxlength="80" value="${draft ? esc(draft.title) : ''}"></label>
+        <label class="field">按鈕文字<input name="linkLabel" required maxlength="20" value="${draft ? esc(draft.linkLabel) : '查看'}"></label>
+        <label class="field">按鈕連結<input name="linkHref" required maxlength="120" value="${draft ? esc(draft.linkHref) : '/shop.html'}"></label>
+        <label class="field">排序<input name="sortOrder" type="number" min="0" max="999" required value="${draft ? draft.sortOrder : state.banners.length + 1}"></label>
+        <label class="field wide">說明<input name="body" maxlength="200" value="${draft ? esc(draft.body) : ''}"></label>
+        <label class="field wide">圖片說明<input name="altText" maxlength="80" value="${draft ? esc(draft.altText) : ''}"></label>
+        <label class="field wide">圖片<input name="imageFile" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+      </div>
+      ${draft && draft.image ? `<p class="preview-row"><img src="${esc(draft.image)}" alt=""></p>` : ''}
+      <p class="muted">連結請填本站路徑，例如 /shop.html。數字越小越靠前。</p>
+      <label class="check"><input type="checkbox" name="isPublished" ${!draft || draft.isPublished ? 'checked' : ''}> 顯示在首頁</label>
+      <div class="btn-row">
+        <button class="btn" type="submit">${draft ? '儲存修改' : '新增主視覺'}</button>
+        ${draft ? '<button class="btn secondary" type="button" data-action="cancel-banner">取消</button>' : ''}
+      </div>
+    </form>
+  `;
+}
+
+function paintBanners() {
+  const rows = state.banners.map((banner) => `
+    <tr>
+      <td>${banner.sortOrder}</td>
+      <td>${esc(banner.title)}</td>
+      <td>${esc(banner.linkHref)}</td>
+      <td>${banner.isPublished ? '顯示' : '隱藏'}</td>
+      <td>
+        <button class="btn secondary" type="button" data-action="edit-banner" data-id="${banner.id}">編輯</button>
+        <button class="btn danger" type="button" data-action="delete-banner" data-id="${banner.id}" data-name="${esc(banner.title)}">刪除</button>
+      </td>
+    </tr>
+  `).join('');
+  document.getElementById('panel').innerHTML = `
+    <h1>主視覺</h1>
+    <p class="muted">首頁輪播會依排序顯示已勾選的項目，約每 5 秒換一張。</p>
+    ${bannerForm()}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>排序</th><th>標題</th><th>連結</th><th>狀態</th><th></th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5">還沒有主視覺。</td></tr>'}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function renderBanners() {
+  state.banners = await api('/admin/banners', { auth: 'admin' });
+  paintBanners();
 }
 
 function productForm() {
@@ -459,6 +525,30 @@ async function uploadImage(file) {
   return payload.url;
 }
 
+async function saveBanner(form) {
+  let image = form.image.value;
+  if (form.imageFile.files[0]) image = await uploadImage(form.imageFile.files[0]);
+  const body = {
+    eyebrow: form.eyebrow.value,
+    title: form.title.value,
+    body: form.body.value,
+    linkLabel: form.linkLabel.value,
+    linkHref: form.linkHref.value,
+    sortOrder: Number(form.sortOrder.value),
+    altText: form.altText.value,
+    image,
+    isPublished: form.isPublished.checked
+  };
+  const bannerId = form.bannerId.value;
+  if (bannerId) {
+    await api(`/admin/banners/${bannerId}`, { method: 'PUT', auth: 'admin', body });
+  } else {
+    await api('/admin/banners', { method: 'POST', auth: 'admin', body });
+  }
+  state.bannerDraft = null;
+  await renderBanners();
+}
+
 async function saveProduct(form) {
   let mainImage = form.mainImage.value;
   if (form.mainFile.files[0]) mainImage = await uploadImage(form.mainFile.files[0]);
@@ -553,7 +643,8 @@ async function onSubmit(event) {
   const button = form.querySelector('button[type="submit"]');
   if (button) button.disabled = true;
   try {
-    if (form.id === 'product-form') await saveProduct(form);
+    if (form.id === 'banner-form') await saveBanner(form);
+    else if (form.id === 'product-form') await saveProduct(form);
     else if (form.id === 'article-form') await saveArticle(form);
     else if (form.id === 'category-form') await saveCategory(form);
     else if (form.id === 'admin-form') await saveAdmin(form);
@@ -571,6 +662,20 @@ async function onClick(event) {
   const action = button.dataset.action;
   const id = Number(button.dataset.id);
   try {
+    if (action === 'edit-banner') {
+      state.bannerDraft = state.banners.find((item) => item.id === id) || null;
+      paintBanners();
+    }
+    if (action === 'cancel-banner') {
+      state.bannerDraft = null;
+      paintBanners();
+    }
+    if (action === 'delete-banner') {
+      if (!confirm(`確定刪除「${button.dataset.name}」？`)) return;
+      await api(`/admin/banners/${id}`, { method: 'DELETE', auth: 'admin' });
+      state.bannerDraft = null;
+      await renderBanners();
+    }
     if (action === 'edit-product') {
       state.productDraft = state.products.find((item) => item.id === id) || null;
       paintProducts();

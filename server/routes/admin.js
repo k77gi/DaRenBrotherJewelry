@@ -618,6 +618,126 @@ router.patch('/admins/:id', requirePermission('admins.write'), route((req, res) 
   res.json({ ok: true, isActive: !!isActive });
 }));
 
+function bannerImage(value) {
+  const text = String(value || '').trim();
+  if (/^\/images\/banners\/[a-z0-9.-]+\.svg$/i.test(text)) return text;
+  return cleanImagePath(text);
+}
+
+function bannerLink(value) {
+  const text = sanitizePlain(value, 120, '連結', { required: true });
+  if (!text.startsWith('/') || text.startsWith('//') || text.includes('\\')) {
+    throw new HttpError(400, '連結請填本站路徑，例如 /shop.html');
+  }
+  return text;
+}
+
+function bannerBody(body) {
+  const image = bannerImage(body.image);
+  if (!image) throw new HttpError(400, '請上傳主視覺圖片');
+  return {
+    eyebrow: sanitizePlain(body.eyebrow, 40, '小標'),
+    title: sanitizePlain(body.title, 80, '標題', { required: true }),
+    body: sanitizePlain(body.body, 200, '說明'),
+    linkHref: bannerLink(body.linkHref),
+    linkLabel: sanitizePlain(body.linkLabel, 20, '按鈕文字', { required: true }),
+    image,
+    altText: sanitizePlain(body.altText, 80, '圖片說明'),
+    sortOrder: requiredInt(body.sortOrder, '排序', { min: 0, max: 999 }),
+    isPublished: readFlag(body.isPublished) ? 1 : 0
+  };
+}
+
+function mapAdminBanner(row) {
+  return {
+    id: row.id,
+    eyebrow: row.eyebrow,
+    title: row.title,
+    body: row.body,
+    linkHref: row.link_href,
+    linkLabel: row.link_label,
+    image: row.image,
+    altText: row.alt_text,
+    sortOrder: row.sort_order,
+    isPublished: !!row.is_published
+  };
+}
+
+router.get('/banners', requirePermission('products.write'), route((req, res) => {
+  const rows = getDb().prepare(`
+    SELECT id, eyebrow, title, body, link_href, link_label, image, alt_text, sort_order, is_published
+    FROM banners
+    ORDER BY sort_order, id
+  `).all();
+  res.json(rows.map(mapAdminBanner));
+}));
+
+router.post('/banners', requirePermission('products.write'), route((req, res) => {
+  const input = bannerBody(req.body || {});
+  const db = getDb();
+  const info = db.prepare(`
+    INSERT INTO banners (
+      eyebrow, title, body, link_href, link_label, image, alt_text, sort_order, is_published
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    input.eyebrow, input.title, input.body, input.linkHref, input.linkLabel,
+    input.image, input.altText, input.sortOrder, input.isPublished
+  );
+  const id = Number(info.lastInsertRowid);
+  writeAudit(db, {
+    adminId: req.admin.id,
+    action: 'banner.create',
+    targetType: 'banner',
+    targetId: id,
+    detail: { title: input.title },
+    ip: requestIp(req)
+  });
+  res.status(201).json(mapAdminBanner(db.prepare('SELECT * FROM banners WHERE id = ?').get(id)));
+}));
+
+router.put('/banners/:id', requirePermission('products.write'), route((req, res) => {
+  const id = idParam(req.params.id);
+  const input = bannerBody(req.body || {});
+  const db = getDb();
+  const current = db.prepare('SELECT id FROM banners WHERE id = ?').get(id);
+  if (!current) throw new HttpError(404, '找不到這張主視覺');
+  db.prepare(`
+    UPDATE banners
+    SET eyebrow = ?, title = ?, body = ?, link_href = ?, link_label = ?,
+        image = ?, alt_text = ?, sort_order = ?, is_published = ?, updated_at = ?
+    WHERE id = ?
+  `).run(
+    input.eyebrow, input.title, input.body, input.linkHref, input.linkLabel,
+    input.image, input.altText, input.sortOrder, input.isPublished, timestamp(), id
+  );
+  writeAudit(db, {
+    adminId: req.admin.id,
+    action: 'banner.update',
+    targetType: 'banner',
+    targetId: id,
+    detail: { title: input.title },
+    ip: requestIp(req)
+  });
+  res.json(mapAdminBanner(db.prepare('SELECT * FROM banners WHERE id = ?').get(id)));
+}));
+
+router.delete('/banners/:id', requirePermission('products.write'), route((req, res) => {
+  const id = idParam(req.params.id);
+  const db = getDb();
+  const current = db.prepare('SELECT id, title FROM banners WHERE id = ?').get(id);
+  if (!current) throw new HttpError(404, '找不到這張主視覺');
+  db.prepare('DELETE FROM banners WHERE id = ?').run(id);
+  writeAudit(db, {
+    adminId: req.admin.id,
+    action: 'banner.delete',
+    targetType: 'banner',
+    targetId: id,
+    detail: { title: current.title },
+    ip: requestIp(req)
+  });
+  res.json({ ok: true });
+}));
+
 router.get('/audit-logs', requirePermission('audit.read'), route((req, res) => {
   const rows = getDb().prepare(`
     SELECT l.id, l.admin_id, a.name AS admin_name, a.username, l.action,

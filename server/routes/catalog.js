@@ -67,6 +67,31 @@ router.get('/products/:id', route((req, res) => {
   res.json(mapProduct(row));
 }));
 
+function mapBanner(row) {
+  return {
+    id: row.id,
+    eyebrow: row.eyebrow,
+    title: row.title,
+    body: row.body,
+    linkHref: row.link_href,
+    linkLabel: row.link_label,
+    image: row.image,
+    altText: row.alt_text,
+    sortOrder: row.sort_order,
+    isPublished: !!row.is_published
+  };
+}
+
+router.get('/banners', route((req, res) => {
+  const rows = getDb().prepare(`
+    SELECT id, eyebrow, title, body, link_href, link_label, image, alt_text, sort_order, is_published
+    FROM banners
+    WHERE is_published = 1
+    ORDER BY sort_order, id
+  `).all();
+  res.json(rows.map(mapBanner));
+}));
+
 router.get('/articles', route((req, res) => {
   const rows = getDb().prepare(`
     SELECT ${ARTICLE_SELECT}

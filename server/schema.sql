@@ -160,6 +160,21 @@ CREATE TABLE admin_login_locks (
   locked_until TEXT
 );
 
+CREATE TABLE banners (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  eyebrow TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL,
+  body TEXT NOT NULL DEFAULT '',
+  link_href TEXT NOT NULL DEFAULT '/shop.html',
+  link_label TEXT NOT NULL DEFAULT '查看',
+  image TEXT NOT NULL DEFAULT '',
+  alt_text TEXT NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  is_published INTEGER NOT NULL DEFAULT 1 CHECK (is_published IN (0, 1)),
+  created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+
 CREATE TABLE inquiries (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,

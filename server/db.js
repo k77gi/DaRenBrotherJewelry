@@ -80,6 +80,23 @@ function migrate(db) {
     )
   `);
   db.exec(`
+    CREATE TABLE IF NOT EXISTS banners (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      eyebrow TEXT NOT NULL DEFAULT '',
+      title TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      link_href TEXT NOT NULL DEFAULT '/shop.html',
+      link_label TEXT NOT NULL DEFAULT '查看',
+      image TEXT NOT NULL DEFAULT '',
+      alt_text TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      is_published INTEGER NOT NULL DEFAULT 1 CHECK (is_published IN (0, 1)),
+      created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+    )
+  `);
+  seedBanners(db);
+  db.exec(`
     CREATE TABLE IF NOT EXISTS inquiries (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
@@ -138,6 +155,25 @@ function alignRoles(db) {
     try { db.exec('ROLLBACK'); } catch (rollbackError) { /* 沒有進行中的交易時略過 */ }
     throw error;
   }
+}
+
+function seedBanners(db) {
+  const done = db.prepare("SELECT value FROM schema_meta WHERE key = 'banners_seeded'").get();
+  if (done) return;
+  const count = db.prepare('SELECT COUNT(*) AS n FROM banners').get().n;
+  if (count === 0) {
+    const insert = db.prepare(`
+      INSERT INTO banners (eyebrow, title, body, link_href, link_label, image, alt_text, sort_order, is_published)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+    `);
+    const rows = [
+      ['現貨飾品', '把日常戴得剛剛好', '珍珠、金飾與玉石，價格、材質和庫存都寫在商品頁。', '/shop.html', '進入珠寶小舖', '/images/banners/banner-1.svg', '珍珠項鍊', 1],
+      ['小白教室', '第一次買，先看再決定', '珍珠怎麼看光澤，金飾怎麼保養，兩篇就夠入門。', '/blog.html', '去小白教室', '/images/banners/banner-2.svg', '金飾保養', 2],
+      ['門市與配送', '滿 3,000 元免運', '未滿收取 80 元。也可以到大安區門市看看實品。', '/contact.html', '與我聯絡', '/images/banners/banner-3.svg', '門市', 3]
+    ];
+    for (const row of rows) insert.run(...row);
+  }
+  db.prepare("INSERT INTO schema_meta (key, value) VALUES ('banners_seeded', ?)").run(timestamp());
 }
 
 function assertPasswordHashes(db) {
