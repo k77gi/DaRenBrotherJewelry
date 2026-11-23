@@ -39,17 +39,17 @@ async function loadProduct() {
       <div class="detail-layout">
         <nav class="cat-nav" aria-label="產品分類">
           ${categories.map((category) => `
-            <a class="${category.slug === product.categorySlug ? 'is-active' : ''}" href="/shop.html?category=${encodeURIComponent(category.slug)}">${esc(category.name)}</a>
+            <a class="${category.slug === product.categorySlug ? 'is-active' : ''}" href="${siteUrl(`/shop.html?category=${encodeURIComponent(category.slug)}`)}">${esc(category.name)}</a>
           `).join('')}
         </nav>
         <div>
           <button class="main-photo" type="button" id="main-photo">
-            <img id="main-image" src="${esc(images[0].src)}" alt="${esc(product.name)} ${esc(images[0].label)}">
+            <img id="main-image" src="${esc(siteUrl(images[0].src))}" alt="${esc(product.name)} ${esc(images[0].label)}">
           </button>
           <div class="thumbs" id="thumbs">
             ${images.map((image, index) => `
-              <button type="button" class="${index === 0 ? 'is-active' : ''}" data-src="${esc(image.src)}" data-label="${esc(image.label)}">
-                <img src="${esc(image.src)}" alt="${esc(image.label)}">
+              <button type="button" class="${index === 0 ? 'is-active' : ''}" data-src="${esc(siteUrl(image.src))}" data-label="${esc(image.label)}">
+                <img src="${esc(siteUrl(image.src))}" alt="${esc(image.label)}">
               </button>
             `).join('')}
           </div>
@@ -94,7 +94,7 @@ async function loadProduct() {
       <div class="gallery-grid">
         ${images.map((image) => `
           <figure>
-            <img src="${esc(image.src)}" alt="${esc(product.name)} ${esc(image.label)}">
+            <img src="${esc(siteUrl(image.src))}" alt="${esc(product.name)} ${esc(image.label)}">
             <figcaption>${esc(image.label)}</figcaption>
           </figure>
         `).join('')}
@@ -157,7 +157,7 @@ async function loadProduct() {
     document.getElementById('buy-now').addEventListener('click', () => {
       try {
         addToCart(product.id, chosenQty(), selected);
-        location.href = '/checkout.html';
+        location.href = siteUrl('/checkout.html');
       } catch (error) {
         showMessage(error.message, false);
       }

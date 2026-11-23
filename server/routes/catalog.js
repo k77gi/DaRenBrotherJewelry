@@ -22,8 +22,8 @@ router.get('/shop', (req, res) => {
   });
 });
 
-router.get('/categories', route((req, res) => {
-  const rows = getDb().prepare(`
+router.get('/categories', route(async (req, res) => {
+  const rows = await getDb().prepare(`
     SELECT id, name, slug, description, sort_order, created_at, updated_at
     FROM categories
     ORDER BY sort_order, id
@@ -31,7 +31,7 @@ router.get('/categories', route((req, res) => {
   res.json(rows.map(mapCategory));
 }));
 
-router.get('/products', route((req, res) => {
+router.get('/products', route(async (req, res) => {
   const params = [];
   let where = 'WHERE p.is_published = 1';
   const category = req.query.category;
@@ -46,7 +46,7 @@ router.get('/products', route((req, res) => {
       throw new HttpError(400, '分類格式不正確');
     }
   }
-  const rows = getDb().prepare(`
+  const rows = await getDb().prepare(`
     SELECT ${PRODUCT_SELECT}
     FROM products p
     JOIN categories c ON c.id = p.category_id
@@ -56,8 +56,8 @@ router.get('/products', route((req, res) => {
   res.json(rows.map(mapProduct));
 }));
 
-router.get('/products/:id', route((req, res) => {
-  const row = getDb().prepare(`
+router.get('/products/:id', route(async (req, res) => {
+  const row = await getDb().prepare(`
     SELECT ${PRODUCT_SELECT}
     FROM products p
     JOIN categories c ON c.id = p.category_id
@@ -84,8 +84,8 @@ function mapBanner(row) {
   };
 }
 
-router.get('/banners', route((req, res) => {
-  const rows = getDb().prepare(`
+router.get('/banners', route(async (req, res) => {
+  const rows = await getDb().prepare(`
     SELECT id, eyebrow, title, body, link_href, link_label, image, alt_text,
            image_width, image_height, sort_order, is_published
     FROM banners
@@ -95,8 +95,8 @@ router.get('/banners', route((req, res) => {
   res.json(rows.map(mapBanner));
 }));
 
-router.get('/articles', route((req, res) => {
-  const rows = getDb().prepare(`
+router.get('/articles', route(async (req, res) => {
+  const rows = await getDb().prepare(`
     SELECT ${ARTICLE_SELECT}
     FROM articles a
     LEFT JOIN admins ON admins.id = a.author_admin_id
@@ -106,8 +106,8 @@ router.get('/articles', route((req, res) => {
   res.json(rows.map(mapArticle));
 }));
 
-router.get('/articles/:id', route((req, res) => {
-  const row = getDb().prepare(`
+router.get('/articles/:id', route(async (req, res) => {
+  const row = await getDb().prepare(`
     SELECT ${ARTICLE_SELECT}
     FROM articles a
     LEFT JOIN admins ON admins.id = a.author_admin_id

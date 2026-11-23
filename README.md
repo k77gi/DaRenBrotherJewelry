@@ -1,48 +1,40 @@
 # 大仁哥的珠寶小舖
 
-本地可跑的珠寶購物網站。前台負責畫面，後台負責規則與資料，資料存在 SQLite 檔案裡。
+本地可跑的珠寶購物網站。前台負責畫面，後台負責規則與資料，資料存在 MySQL。
 
 介面是繁體中文，沒有動畫特效。金額以新台幣整數計算。
 
 ## 為什麼用這套架構
 
-前台是 HTML、CSS、JavaScript，後台是 Node.js、Express，資料庫用 Node.js 24 內建的 `node:sqlite`。
+前台是 HTML、CSS、JavaScript。正式環境的後台是 PHP，資料庫用 MySQL。phpMyAdmin 用來建立資料庫與查看資料。
 
-這樣選是因為本機維護最直接：不用安裝資料庫軟體，也不用打包工具。改一個頁面就改對應的 HTML 或 JS，改一張資料表就改 `server/schema.sql`。
+改一個頁面就改對應的 HTML 或 JS，改一張資料表就改 `server/schema.sql`。
 
 前後台是分開的：
 
 - `frontend/` 只畫畫面，透過 `/api` 讀寫資料。
-- `server/` 檢查權限、計算金額、寫入 SQLite。
+- `server/` 檢查權限、計算金額、寫入 MySQL。
 - 瀏覽器不能直接碰到資料庫。
 
 為了少開一個終端機，Express 會一併把網頁檔送出去。資料夾仍然分開。
 
 ## 環境
 
-- Node.js 24 或以上（本專案在 Node.js 24 驗證）
-- npm
+正式網站放在遠振這類只有 PHP 與 MySQL 的空間，不使用 Node.js。
+
+- PHP 7.4 或以上（需有 PDO MySQL 與 GD）
+- MySQL 8 或 MariaDB 10.3 以上
+- 網頁伺服器需能讀取網站根目錄的 `.htaccess`（Apache）或 `web.config`（IIS）
 
 ## 啟動
 
-在專案資料夾開啟終端機：
+在 phpMyAdmin 建立空資料庫，修改 `app/config.php` 的資料庫名稱、帳號、密碼與 `jwt_secret`。不要先匯入資料表。
 
-```bash
-npm install
-npm start
-```
+把整個專案上傳到網站根目錄（`www` 或 `public_html`），並確認 `.htaccess` 有一起上傳。用網域開啟首頁。第一次有人瀏覽商品時，程式會建立資料表並寫入測試資料。
 
-瀏覽器開啟 [http://localhost:3000](http://localhost:3000)。
+上傳的商品圖會壓成寬度最多 1600px 的 WebP（主機沒有 WebP 時改存 JPEG），檔案放在 `uploads/`。
 
-第一次啟動會建立 `data/shop.sqlite`，並寫入測試商品、文章與管理員。
-
-改過程式想自動重啟，用：
-
-```bash
-npm run dev
-```
-
-請用上面的網址開啟，不要直接用瀏覽器打開 HTML 檔。直接開檔時，頁面連不到 `/api`。
+請用網站網址開啟，不要直接用瀏覽器打開 HTML 檔。直接開檔時，頁面連不到 `/api`。
 
 ## 預設帳號
 
@@ -97,7 +89,7 @@ server/
   seed.js           測試資料
   routes/           /api 路由
   middleware/auth.js  會員與管理員登入檢查
-data/shop.sqlite    啟動後才出現，不放進版控
+data/uploads/       上傳並壓縮後的商品圖，不放進版控
 ```
 
 `frontend/js/common.js` 要先載入。裡面的函式是全域函式，頁面腳本可以直接呼叫，所以不必先學模組打包。
@@ -150,19 +142,23 @@ data/shop.sqlite    啟動後才出現，不放進版控
 2. 執行 `npm run reset`
 3. 再執行 `npm start`
 
-若刪除失敗，通常是網站還開著，或 OneDrive 正在鎖住檔案。先停止網站再試。
+`npm run reset` 只刪除這個專案的資料表，不會刪掉整個 MySQL。
 
 ## 連接埠與密鑰
 
-複製 `.env.example` 為 `.env` 可改連接埠、JWT 密鑰與資料庫路徑：
+複製 `.env.example` 為 `.env` 可改連接埠、JWT 密鑰與 MySQL 連線：
 
 ```text
 PORT=3000
 JWT_SECRET=please-change-this-secret
-DB_PATH=data/shop.sqlite
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+MYSQL_USER=root
+MYSQL_PASSWORD=
+MYSQL_DATABASE=daren_jewelry
 ```
 
-沒有 `.env` 時使用連接埠 3000，以及只適合本機的預設密鑰。
+沒有 `.env` 時使用連接埠 3000、本機 root、資料庫 `daren_jewelry`，以及只適合本機的預設密鑰。cPanel 上的資料庫名稱通常會加上帳號前綴，請填 phpMyAdmin 左側看到的完整名稱。
 
 ## API 一覽
 

@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>結帳｜大仁哥的珠寶小舖</title>
-  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/style.css">
 </head>
 <body data-page="cart">
   <a class="skip" href="#main">跳到主要內容</a>
@@ -19,7 +19,29 @@
         <label class="field">收件人<input name="buyerName" required maxlength="40" autocomplete="name"></label>
         <label class="field">電子郵件<input name="buyerEmail" type="email" required maxlength="120" autocomplete="email"></label>
         <label class="field">電話<input name="buyerPhone" required maxlength="20" autocomplete="tel"></label>
-        <label class="field">收件地址<input name="shippingAddress" required maxlength="200" autocomplete="street-address"></label>
+        <fieldset class="choice-row">
+          <legend>收貨方式</legend>
+          <label class="option"><input type="radio" name="delivery" value="home" checked> 宅配到府</label>
+          <label class="option"><input type="radio" name="delivery" value="cvs"> 超商取貨</label>
+        </fieldset>
+        <div id="cvs-panel" hidden>
+          <label class="field">超商
+            <select name="cvsType">
+              <option value="UNIMART">7-ELEVEN</option>
+              <option value="FAMI">全家</option>
+              <option value="HILIFE">萊爾富</option>
+            </select>
+          </label>
+          <button class="btn secondary" id="open-map" type="button">開啟綠界電子地圖</button>
+          <p class="muted">選完門市後會帶回門市代號、超商名稱與地址。測試環境會進入綠界示範頁，並帶回固定測試門市。</p>
+          <div id="cvs-result" hidden>
+            <p>門市代號 <strong id="cvs-id"></strong></p>
+            <p>超商名稱 <strong id="cvs-name"></strong></p>
+            <p>地址 <strong id="cvs-address"></strong></p>
+          </div>
+          <input type="hidden" name="cvsToken" value="">
+        </div>
+        <label class="field" id="address-field">收件地址<input name="shippingAddress" required maxlength="200" autocomplete="street-address"></label>
         <label class="field">備註（可空白）<textarea name="note" maxlength="300"></textarea></label>
         <button class="btn" type="submit">送出並前往付款</button>
       </form>
@@ -27,7 +49,7 @@
     </div>
   </main>
   <footer id="site-footer"></footer>
-  <script src="/js/common.js"></script>
-  <script src="/js/checkout.js"></script>
+  <script src="js/common.js"></script>
+  <script src="js/checkout.js"></script>
 </body>
 </html>

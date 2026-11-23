@@ -5,7 +5,7 @@ async function loadCart() {
     const [products, shop] = await Promise.all([api('/products'), api('/shop')]);
     const items = cartItems();
     if (items.length === 0) {
-      root.innerHTML = '<p>購物車還沒有商品。<a href="/shop.html">去珠寶小舖</a></p>';
+      root.innerHTML = `<p>購物車還沒有商品。<a href="${siteUrl('/shop.html')}">去珠寶小舖</a></p>`;
       summary.innerHTML = '';
       return;
     }
@@ -28,7 +28,7 @@ async function loadCart() {
       return `
         <div class="cart-line">
           <div>
-            <h3><a href="/product.html?id=${product.id}">${esc(product.name)}</a></h3>
+            <h3><a href="${siteUrl(`/product.html?id=${product.id}`)}">${esc(product.name)}</a></h3>
             <p class="product-meta">${esc(item.color || product.material)}，庫存 ${product.stock} 件${over ? '，數量已超過庫存' : ''}</p>
           </div>
           <div class="stepper">
@@ -54,7 +54,7 @@ async function loadCart() {
       <p>運費 ${money(shipping)}</p>
       <p>合計 <strong>${money(subtotal + shipping)}</strong></p>
       <p class="muted">滿 ${money(shop.freeShippingThreshold)} 免運。庫存不足的品項需先調整數量。</p>
-      ${blocked ? '<p class="alert error">有商品超過庫存或已下架，請先調整。</p>' : '<a class="btn" href="/checkout.html">前往結帳</a>'}
+      ${blocked ? '<p class="alert error">有商品超過庫存或已下架，請先調整。</p>' : `<a class="btn" href="${siteUrl('/checkout.html')}">前往結帳</a>`}
     `;
 
     const change = (productId, color, quantity) => {

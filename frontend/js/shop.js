@@ -1,7 +1,7 @@
 function categoryLinks(categories, current) {
-  const all = `<a class="${current ? '' : 'is-active'}" href="/shop.html">全部商品</a>`;
+  const all = `<a class="${current ? '' : 'is-active'}" href="${siteUrl('/shop.html')}">全部商品</a>`;
   return all + categories.map((category) => `
-    <a class="${current === category.slug ? 'is-active' : ''}" href="/shop.html?category=${encodeURIComponent(category.slug)}">${esc(category.name)}</a>
+    <a class="${current === category.slug ? 'is-active' : ''}" href="${siteUrl(`/shop.html?category=${encodeURIComponent(category.slug)}`)}">${esc(category.name)}</a>
   `).join('');
 }
 

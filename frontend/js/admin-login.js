@@ -32,7 +32,7 @@ form.addEventListener('submit', async (event) => {
       }
     });
     localStorage.setItem('daren-admin-token', result.token);
-    location.href = '/admin/index.html';
+    location.href = siteUrl('/admin/index.html');
   } catch (error) {
     alertBox.hidden = false;
     alertBox.textContent = readableError(error);

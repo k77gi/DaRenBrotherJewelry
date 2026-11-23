@@ -92,15 +92,15 @@ const PRODUCTS = [
   }
 ];
 
-function seed(db) {
-  db.exec('BEGIN IMMEDIATE');
+async function seed(db) {
+  await db.exec('BEGIN IMMEDIATE');
   try {
     const permissionIds = {};
     const insertPermission = db.prepare(
       'INSERT INTO permissions (code, name, description) VALUES (?, ?, ?)'
     );
     for (const [code, name, description] of PERMISSIONS) {
-      const info = insertPermission.run(code, name, description);
+      const info = await insertPermission.run(code, name, description);
       permissionIds[code] = Number(info.lastInsertRowid);
     }
 
@@ -112,12 +112,12 @@ function seed(db) {
       'INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)'
     );
     for (const role of ROLES) {
-      const info = insertRole.run(role.code, role.name, role.description, role.level);
+      const info = await insertRole.run(role.code, role.name, role.description, role.level);
       const roleId = Number(info.lastInsertRowid);
       roleIds[role.code] = roleId;
       for (const code of codesFor(role)) {
         if (!permissionIds[code]) throw new Error(`未知權限：${code}`);
-        insertRolePermission.run(roleId, permissionIds[code]);
+        await insertRolePermission.run(roleId, permissionIds[code]);
       }
     }
 
@@ -126,7 +126,7 @@ function seed(db) {
       'INSERT INTO admins (role_id, name, username, email, password_hash) VALUES (?, ?, ?, ?, ?)'
     );
     for (const account of ACCOUNTS) {
-      const info = insertAdmin.run(
+      const info = await insertAdmin.run(
         roleIds[account.role],
         account.name,
         account.username,
@@ -141,7 +141,7 @@ function seed(db) {
       'INSERT INTO categories (name, slug, description, sort_order) VALUES (?, ?, ?, ?)'
     );
     for (const [name, slug, description, sortOrder] of CATEGORIES) {
-      const info = insertCategory.run(name, slug, description, sortOrder);
+      const info = await insertCategory.run(name, slug, description, sortOrder);
       categoryIds[slug] = Number(info.lastInsertRowid);
     }
 
@@ -151,7 +151,7 @@ function seed(db) {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
     `);
     for (const product of PRODUCTS) {
-      insertProduct.run(
+      await insertProduct.run(
         categoryIds[product.category],
         product.name,
         product.slug,
@@ -169,7 +169,7 @@ function seed(db) {
       INSERT INTO articles (title, slug, summary, content, is_published, author_admin_id, published_at)
       VALUES (?, ?, ?, ?, 1, ?, ?)
     `);
-    insertArticle.run(
+    await insertArticle.run(
       '第一次買珍珠，怎麼看光澤與大小',
       'pearl-basics',
       '珍珠好不好看，先看光澤，再決定大小。這篇只講買第一條時用得到的判斷。',
@@ -183,7 +183,7 @@ function seed(db) {
       adminIds.daren,
       now
     );
-    insertArticle.run(
+    await insertArticle.run(
       '金飾日常保養：五個避免變色的習慣',
       'gold-care',
       '金飾變暗，常常是清潔劑、汗水或保養品造成的。五個習慣就夠日常使用。',
@@ -200,9 +200,9 @@ function seed(db) {
       now
     );
 
-    db.prepare("INSERT INTO schema_meta (key, value) VALUES ('version', '1')").run();
-    db.prepare("INSERT INTO schema_meta (key, value) VALUES ('seeded_at', ?)").run(now);
-    writeAudit(db, {
+    await db.prepare("INSERT INTO schema_meta (key, value) VALUES ('version', '1')").run();
+    await db.prepare("INSERT INTO schema_meta (key, value) VALUES ('seeded_at', ?)").run(now);
+    await writeAudit(db, {
       adminId: adminIds.daren,
       action: 'system.seed',
       targetType: 'database',
@@ -210,9 +210,9 @@ function seed(db) {
       detail: { products: PRODUCTS.length, articles: 2, admins: ACCOUNTS.length },
       ip: 'system'
     });
-    db.exec('COMMIT');
+    await db.exec('COMMIT');
   } catch (error) {
-    try { db.exec('ROLLBACK'); } catch (rollbackError) { /* 沒有進行中的交易時略過 */ }
+    try { await db.exec('ROLLBACK'); } catch (rollbackError) { /* 沒有進行中的交易時略過 */ }
     throw error;
   }
 }

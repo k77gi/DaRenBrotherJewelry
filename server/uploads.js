@@ -1,10 +1,13 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const sharp = require('sharp');
 const { HttpError } = require('./httpError');
 
 const uploadDir = path.join(__dirname, '..', 'data', 'uploads');
-const MAX_BYTES = 2 * 1024 * 1024;
+const MAX_BYTES = 12 * 1024 * 1024;
+const MAX_WIDTH = 1600;
+const WEBP_QUALITY = 85;
 
 const TYPES = [
   { mime: 'image/jpeg', ext: 'jpg', bytes: [0xff, 0xd8, 0xff] },
@@ -20,7 +23,7 @@ function readRequest(req) {
     req.on('data', (chunk) => {
       size += chunk.length;
       if (size > MAX_BYTES + 64 * 1024) {
-        reject(new HttpError(400, '圖片請小於 2MB'));
+        reject(new HttpError(400, '圖片請小於 12MB'));
         req.destroy();
         return;
       }
@@ -62,14 +65,27 @@ function detect(file, mime) {
   return found.ext;
 }
 
+async function compressImage(file) {
+  try {
+    return await sharp(file, { failOn: 'none', animated: false, limitInputPixels: 40_000_000 })
+      .rotate()
+      .resize({ width: MAX_WIDTH, withoutEnlargement: true })
+      .webp({ quality: WEBP_QUALITY, effort: 4, smartSubsample: true })
+      .toBuffer();
+  } catch (error) {
+    throw new HttpError(400, '圖片無法處理，請改傳 JPG、PNG 或 WEBP');
+  }
+}
+
 async function saveUpload(req) {
   const buffer = await readRequest(req);
   const { file, mime } = parseFile(buffer, req.headers['content-type']);
-  if (!file.length || file.length > MAX_BYTES) throw new HttpError(400, '圖片請小於 2MB');
-  const ext = detect(file, mime);
+  if (!file.length || file.length > MAX_BYTES) throw new HttpError(400, '圖片請小於 12MB');
+  detect(file, mime);
+  const output = await compressImage(file);
   fs.mkdirSync(uploadDir, { recursive: true });
-  const name = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}.${ext}`;
-  fs.writeFileSync(path.join(uploadDir, name), file);
+  const name = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}.webp`;
+  fs.writeFileSync(path.join(uploadDir, name), output);
   return `/uploads/${name}`;
 }
 
@@ -92,14 +108,14 @@ function removeUpload(url) {
   return true;
 }
 
-function releaseImage(db, url) {
+async function releaseImage(db, url) {
   const text = String(url || '').trim();
   if (!text.startsWith('/uploads/')) return false;
-  const usedByBanner = db.prepare('SELECT 1 AS n FROM banners WHERE image = ?').get(text);
-  const usedByProduct = db.prepare('SELECT 1 AS n FROM products WHERE main_image = ?').get(text);
-  const usedByArticle = db.prepare('SELECT 1 AS n FROM articles WHERE cover_image = ?').get(text);
+  const usedByBanner = await db.prepare('SELECT 1 AS n FROM banners WHERE image = ?').get(text);
+  const usedByProduct = await db.prepare('SELECT 1 AS n FROM products WHERE main_image = ?').get(text);
+  const usedByArticle = await db.prepare('SELECT 1 AS n FROM articles WHERE cover_image = ?').get(text);
   if (usedByBanner || usedByProduct || usedByArticle) return false;
-  const details = db.prepare("SELECT detail_images FROM products WHERE detail_images != ''").all();
+  const details = await db.prepare("SELECT detail_images FROM products WHERE detail_images != ''").all();
   const usedInDetail = details.some((row) => {
     try {
       const list = JSON.parse(row.detail_images);

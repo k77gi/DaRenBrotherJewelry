@@ -40,11 +40,11 @@ function optionalMember(req, res, next) {
   }
 }
 
-function requireAdmin(req, res, next) {
+async function requireAdmin(req, res, next) {
   try {
     const payload = readToken(req);
     if (!payload || payload.typ !== 'admin') throw new HttpError(401, '請先登入管理後台');
-    const admin = getDb().prepare(`
+    const admin = await getDb().prepare(`
       SELECT a.id, a.name, a.username, a.is_active,
              r.code AS role_code, r.name AS role_name, r.role_level
       FROM admins a
@@ -52,13 +52,13 @@ function requireAdmin(req, res, next) {
       WHERE a.id = ?
     `).get(payload.id);
     if (!admin || !admin.is_active) throw new HttpError(401, '請先登入管理後台');
-    const permissions = getDb().prepare(`
+    const permissions = (await getDb().prepare(`
       SELECT p.code
       FROM permissions p
       JOIN role_permissions rp ON rp.permission_id = p.id
       JOIN admins a ON a.role_id = rp.role_id
       WHERE a.id = ?
-    `).all(admin.id).map((row) => row.code);
+    `).all(admin.id)).map((row) => row.code);
     req.admin = {
       id: admin.id,
       name: admin.name,

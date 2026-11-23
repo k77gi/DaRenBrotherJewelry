@@ -1,10 +1,66 @@
+const DRAFT_KEY = 'daren-checkout-draft';
+
+function saveDraft(form) {
+  sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
+    buyerName: form.buyerName.value,
+    buyerEmail: form.buyerEmail.value,
+    buyerPhone: form.buyerPhone.value,
+    shippingAddress: form.shippingAddress.value,
+    note: form.note.value,
+    delivery: form.delivery.value,
+    cvsType: form.cvsType.value
+  }));
+}
+
+function restoreDraft(form) {
+  const raw = sessionStorage.getItem(DRAFT_KEY);
+  if (!raw) return;
+  try {
+    const draft = JSON.parse(raw);
+    form.buyerName.value = draft.buyerName || form.buyerName.value;
+    form.buyerEmail.value = draft.buyerEmail || form.buyerEmail.value;
+    form.buyerPhone.value = draft.buyerPhone || form.buyerPhone.value;
+    form.shippingAddress.value = draft.shippingAddress || '';
+    form.note.value = draft.note || '';
+    if (draft.delivery) form.delivery.value = draft.delivery;
+    if (draft.cvsType) form.cvsType.value = draft.cvsType;
+  } catch (error) {
+    sessionStorage.removeItem(DRAFT_KEY);
+  }
+}
+
+function syncDelivery(form) {
+  const cvs = form.delivery.value === 'cvs';
+  document.getElementById('cvs-panel').hidden = !cvs;
+  const address = document.getElementById('address-field');
+  address.hidden = cvs;
+  form.shippingAddress.required = !cvs;
+  if (cvs) form.shippingAddress.value = '';
+}
+
+function showStore(store) {
+  document.getElementById('cvs-id').textContent = store.storeId;
+  document.getElementById('cvs-name').textContent = store.storeName;
+  document.getElementById('cvs-address').textContent = store.address;
+  document.getElementById('cvs-result').hidden = false;
+}
+
+async function loadStore(form, token) {
+  const store = await api(`/logistics/cvs-map/${encodeURIComponent(token)}`);
+  form.delivery.value = 'cvs';
+  form.cvsType.value = store.subtype;
+  form.cvsToken.value = token;
+  syncDelivery(form);
+  showStore(store);
+}
+
 async function loadCheckout() {
   const form = document.getElementById('checkout-form');
   const summary = document.getElementById('checkout-summary');
   const alertBox = document.getElementById('checkout-alert');
   const items = cartItems();
   if (items.length === 0) {
-    summary.innerHTML = '<p>購物車是空的。<a href="/shop.html">去珠寶小舖</a></p>';
+    summary.innerHTML = `<p>購物車是空的。<a href="${siteUrl('/shop.html')}">去珠寶小舖</a></p>`;
     form.hidden = true;
     return;
   }
@@ -51,12 +107,63 @@ async function loadCheckout() {
     }
   }
 
+  restoreDraft(form);
+  syncDelivery(form);
+  form.addEventListener('change', (event) => {
+    if (form.delivery.value === 'home' || event.target.name === 'cvsType') {
+      form.cvsToken.value = '';
+      document.getElementById('cvs-result').hidden = true;
+    }
+    syncDelivery(form);
+  });
+  document.getElementById('open-map').addEventListener('click', async () => {
+    alertBox.hidden = true;
+    saveDraft(form);
+    try {
+      const result = await api('/logistics/cvs-map', {
+        method: 'POST',
+        body: {
+          subtype: form.cvsType.value,
+          device: window.matchMedia('(max-width: 800px)').matches ? '1' : '0'
+        }
+      });
+      const gate = document.createElement('form');
+      gate.method = 'POST';
+      gate.action = result.action;
+      Object.entries(result.fields).forEach(([name, value]) => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = name;
+        input.value = value;
+        gate.appendChild(input);
+      });
+      document.body.appendChild(gate);
+      gate.submit();
+    } catch (error) {
+      alertBox.hidden = false;
+      alertBox.textContent = readableError(error);
+    }
+  });
+  const cvsToken = new URLSearchParams(location.search).get('cvs');
+  if (cvsToken) {
+    try {
+      await loadStore(form, cvsToken);
+      history.replaceState(null, '', '/checkout.html');
+    } catch (error) {
+      alertBox.hidden = false;
+      alertBox.textContent = readableError(error);
+    }
+  }
+
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     alertBox.hidden = true;
-    const button = form.querySelector('button');
+    const button = form.querySelector('button[type="submit"]');
     button.disabled = true;
     try {
+      if (form.delivery.value === 'cvs' && !form.cvsToken.value) {
+        throw new Error('請先用電子地圖選擇超商');
+      }
       const order = await api('/orders', {
         method: 'POST',
         auth: 'member',
@@ -66,12 +173,14 @@ async function loadCheckout() {
           buyerPhone: form.buyerPhone.value,
           shippingAddress: form.shippingAddress.value,
           note: form.note.value,
+          delivery: form.delivery.value,
+          cvsToken: form.cvsToken.value,
           items: cartItems()
         }
       });
       saveCart([]);
       sessionStorage.setItem('daren-order-email', order.buyerEmail);
-      location.href = `/payment.html?no=${encodeURIComponent(order.orderNo)}`;
+      location.href = siteUrl(`/payment.html?no=${encodeURIComponent(order.orderNo)}`);
     } catch (error) {
       alertBox.hidden = false;
       alertBox.textContent = readableError(error);

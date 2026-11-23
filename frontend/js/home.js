@@ -50,9 +50,9 @@ function paintBanners(banners) {
         ${banner.eyebrow ? `<p class="eyebrow">${esc(banner.eyebrow)}</p>` : ''}
         <h1>${esc(banner.title)}</h1>
         ${banner.body ? `<p>${esc(banner.body)}</p>` : ''}
-        <a class="btn" href="${esc(banner.linkHref)}">${esc(banner.linkLabel)}</a>
+        <a class="btn" href="${esc(siteUrl(banner.linkHref))}">${esc(banner.linkLabel)}</a>
       </div>
-      ${banner.image ? `<img src="${esc(banner.image)}" alt="${esc(banner.altText || banner.title)}" style="--banner-w:${Number(banner.imageWidth) || 480}px;--banner-h:${Number(banner.imageHeight) || 240}px">` : ''}
+      ${banner.image ? `<img src="${esc(siteUrl(banner.image))}" alt="${esc(banner.altText || banner.title)}" style="--banner-w:${Number(banner.imageWidth) || 480}px;--banner-h:${Number(banner.imageHeight) || 240}px">` : ''}
     </article>
   `).join('');
   const dots = banners.map((banner, index) => `

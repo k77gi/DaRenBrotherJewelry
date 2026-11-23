@@ -32,13 +32,13 @@ function imageSet(slug) {
   ];
 }
 
-function backfillVisuals(db) {
+async function backfillVisuals(db) {
   const update = db.prepare('UPDATE products SET colors = ?, care = ? WHERE id = ?');
-  const rows = db.prepare("SELECT id, slug, colors FROM products").all();
+  const rows = await db.prepare("SELECT id, slug, colors FROM products").all();
   for (const row of rows) {
     const visual = VISUALS[row.slug];
     if (!visual || row.colors) continue;
-    update.run(visual.colors, visual.care, row.id);
+    await update.run(visual.colors, visual.care, row.id);
   }
 }
 

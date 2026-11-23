@@ -5,9 +5,9 @@ const { sanitizePlain } = require('../security');
 
 const router = express.Router();
 
-router.post('/', route((req, res) => {
+router.post('/', route(async (req, res) => {
   const body = req.body || {};
-  const info = getDb().prepare(`
+  const info = await getDb().prepare(`
     INSERT INTO inquiries (name, phone, email, message)
     VALUES (?, ?, ?, ?)
   `).run(

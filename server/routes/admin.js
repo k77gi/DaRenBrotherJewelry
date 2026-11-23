@@ -42,8 +42,8 @@ function laterTimestamp(minutes) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
-function lockState(db, username) {
-  const row = db.prepare(
+async function lockState(db, username) {
+  const row = await db.prepare(
     'SELECT fail_count, locked_until FROM admin_login_locks WHERE username = ?'
   ).get(username);
   if (!row) return { failCount: 0, locked: false };
@@ -51,7 +51,7 @@ function lockState(db, username) {
     return { failCount: row.fail_count, locked: true };
   }
   if (row.locked_until) {
-    db.prepare(
+    await db.prepare(
       'UPDATE admin_login_locks SET fail_count = 0, locked_until = NULL WHERE username = ?'
     ).run(username);
     return { failCount: 0, locked: false };
@@ -59,11 +59,11 @@ function lockState(db, username) {
   return { failCount: row.fail_count, locked: false };
 }
 
-function recordLoginFailure(db, username) {
-  const state = lockState(db, username);
+async function recordLoginFailure(db, username) {
+  const state = await lockState(db, username);
   const failCount = state.failCount + 1;
   const lockedUntil = failCount >= LOCK_AFTER ? laterTimestamp(LOCK_MINUTES) : null;
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO admin_login_locks (username, fail_count, locked_until)
     VALUES (?, ?, ?)
     ON CONFLICT(username) DO UPDATE SET fail_count = excluded.fail_count, locked_until = excluded.locked_until
@@ -71,23 +71,23 @@ function recordLoginFailure(db, username) {
   return failCount >= LOCK_AFTER;
 }
 
-function clearLoginFailure(db, username) {
-  db.prepare('DELETE FROM admin_login_locks WHERE username = ?').run(username);
+async function clearLoginFailure(db, username) {
+  await db.prepare('DELETE FROM admin_login_locks WHERE username = ?').run(username);
 }
 
 router.get('/captcha', route((req, res) => {
   res.json(createCaptcha());
 }));
 
-router.post('/login', route((req, res) => {
+router.post('/login', route(async (req, res) => {
   const username = requiredText(req.body?.username, 40, '帳號').toLowerCase();
   const password = String(req.body?.password || '');
   const db = getDb();
-  if (lockState(db, username).locked) {
+  if ((await lockState(db, username)).locked) {
     throw new HttpError(429, `連續錯誤 ${LOCK_AFTER} 次，此帳號已鎖定 ${LOCK_MINUTES} 分鐘`);
   }
   const captchaOk = consumeCaptcha(req.body?.captchaId, req.body?.captchaCode);
-  const admin = db.prepare(`
+  const admin = await db.prepare(`
     SELECT a.id, a.name, a.username, a.password_hash, a.is_active, r.name AS role_name
     FROM admins a
     JOIN roles r ON r.id = a.role_id
@@ -95,8 +95,8 @@ router.post('/login', route((req, res) => {
   `).get(username);
   const matched = admin ? verifyPassword(password, admin.password_hash) : false;
   if (!captchaOk || !admin || !matched) {
-    const locked = recordLoginFailure(db, username);
-    writeAudit(db, {
+    const locked = await recordLoginFailure(db, username);
+    await writeAudit(db, {
       action: 'admin.login_failed',
       targetType: 'admin',
       detail: { username, reason: captchaOk ? 'credentials' : 'captcha' },
@@ -108,8 +108,8 @@ router.post('/login', route((req, res) => {
     throw new HttpError(401, captchaOk ? '帳號或密碼不正確' : '驗證碼不正確，請重新輸入');
   }
   if (!admin.is_active) throw new HttpError(403, '此帳號已停用，請聯絡最大管理者');
-  clearLoginFailure(db, username);
-  writeAudit(db, {
+  await clearLoginFailure(db, username);
+  await writeAudit(db, {
     adminId: admin.id,
     action: 'admin.login',
     targetType: 'admin',
@@ -129,8 +129,8 @@ router.post('/login', route((req, res) => {
 
 router.use(requireAdmin);
 
-router.get('/me', route((req, res) => {
-  const permissions = getDb().prepare(`
+router.get('/me', route(async (req, res) => {
+  const permissions = await getDb().prepare(`
     SELECT p.code, p.name, p.description
     FROM permissions p
     JOIN role_permissions rp ON rp.permission_id = p.id
@@ -151,26 +151,26 @@ router.get('/me', route((req, res) => {
   });
 }));
 
-router.get('/summary', route((req, res) => {
+router.get('/summary', route(async (req, res) => {
   const db = getDb();
   const summary = {};
   if (allows(req, 'catalog.read', 'products.write')) {
-    summary.productCount = db.prepare('SELECT COUNT(*) AS n FROM products').get().n;
+    summary.productCount = (await db.prepare('SELECT COUNT(*) AS n FROM products').get()).n;
   }
   if (allows(req, 'articles.read', 'articles.write')) {
-    summary.articleCount = db.prepare('SELECT COUNT(*) AS n FROM articles').get().n;
+    summary.articleCount = (await db.prepare('SELECT COUNT(*) AS n FROM articles').get()).n;
   }
   if (allows(req, 'orders.read')) {
-    summary.orderCount = db.prepare('SELECT COUNT(*) AS n FROM orders').get().n;
-    summary.pendingOrderCount = db.prepare(
+    summary.orderCount = (await db.prepare('SELECT COUNT(*) AS n FROM orders').get()).n;
+    summary.pendingOrderCount = (await db.prepare(
       "SELECT COUNT(*) AS n FROM orders WHERE status = 'pending'"
-    ).get().n;
+    ).get()).n;
   }
   if (allows(req, 'members.read')) {
-    summary.memberCount = db.prepare('SELECT COUNT(*) AS n FROM members').get().n;
+    summary.memberCount = (await db.prepare('SELECT COUNT(*) AS n FROM members').get()).n;
   }
   if (allows(req, 'inquiries.read', 'inquiries.write')) {
-    summary.inquiryCount = db.prepare('SELECT COUNT(*) AS n FROM inquiries').get().n;
+    summary.inquiryCount = (await db.prepare('SELECT COUNT(*) AS n FROM inquiries').get()).n;
   }
   res.json(summary);
 }));
@@ -216,8 +216,8 @@ function productBody(body) {
   };
 }
 
-function loadAdminProduct(db, id) {
-  return db.prepare(`
+async function loadAdminProduct(db, id) {
+  return await db.prepare(`
     SELECT ${PRODUCT_SELECT}
     FROM products p
     JOIN categories c ON c.id = p.category_id
@@ -225,8 +225,8 @@ function loadAdminProduct(db, id) {
   `).get(id);
 }
 
-router.get('/products', requireAny('catalog.read', 'products.write'), route((req, res) => {
-  const rows = getDb().prepare(`
+router.get('/products', requireAny('catalog.read', 'products.write'), route(async (req, res) => {
+  const rows = await getDb().prepare(`
     SELECT ${PRODUCT_SELECT}
     FROM products p
     JOIN categories c ON c.id = p.category_id
@@ -235,13 +235,13 @@ router.get('/products', requireAny('catalog.read', 'products.write'), route((req
   res.json(rows.map(mapProduct));
 }));
 
-router.post('/products', requirePermission('products.write'), route((req, res) => {
+router.post('/products', requirePermission('products.write'), route(async (req, res) => {
   const input = productBody(req.body || {});
   const db = getDb();
-  const category = db.prepare('SELECT id FROM categories WHERE id = ?').get(input.categoryId);
+  const category = await db.prepare('SELECT id FROM categories WHERE id = ?').get(input.categoryId);
   if (!category) throw new HttpError(400, '請選擇有效的分類');
   const slug = `draft-${Date.now()}`;
-  const info = db.prepare(`
+  const info = await db.prepare(`
     INSERT INTO products (
       category_id, name, slug, summary, description, price, material, weight_grams, stock,
       colors, care, main_image, detail_images, extra_fields, is_published
@@ -253,8 +253,8 @@ router.post('/products', requirePermission('products.write'), route((req, res) =
     JSON.stringify(input.extraFields), input.isPublished
   );
   const id = Number(info.lastInsertRowid);
-  db.prepare('UPDATE products SET slug = ? WHERE id = ?').run(`product-${id}`, id);
-  writeAudit(db, {
+  await db.prepare('UPDATE products SET slug = ? WHERE id = ?').run(`product-${id}`, id);
+  await writeAudit(db, {
     adminId: req.admin.id,
     action: 'product.create',
     targetType: 'product',
@@ -262,18 +262,18 @@ router.post('/products', requirePermission('products.write'), route((req, res) =
     detail: { name: input.name, price: input.price, stock: input.stock, colors: input.colors },
     ip: requestIp(req)
   });
-  res.status(201).json(mapProduct(loadAdminProduct(db, id)));
+  res.status(201).json(mapProduct(await loadAdminProduct(db, id)));
 }));
 
-router.put('/products/:id', requirePermission('products.write'), route((req, res) => {
+router.put('/products/:id', requirePermission('products.write'), route(async (req, res) => {
   const id = idParam(req.params.id);
   const input = productBody(req.body || {});
   const db = getDb();
-  const current = db.prepare('SELECT id FROM products WHERE id = ?').get(id);
+  const current = await db.prepare('SELECT id FROM products WHERE id = ?').get(id);
   if (!current) throw new HttpError(404, '找不到這個商品');
-  const category = db.prepare('SELECT id FROM categories WHERE id = ?').get(input.categoryId);
+  const category = await db.prepare('SELECT id FROM categories WHERE id = ?').get(input.categoryId);
   if (!category) throw new HttpError(400, '請選擇有效的分類');
-  db.prepare(`
+  await db.prepare(`
     UPDATE products
     SET category_id = ?, name = ?, summary = ?, description = ?, price = ?,
         material = ?, weight_grams = ?, stock = ?, colors = ?, care = ?,
@@ -285,7 +285,7 @@ router.put('/products/:id', requirePermission('products.write'), route((req, res
     input.mainImage, JSON.stringify(input.detailImages), JSON.stringify(input.extraFields),
     input.isPublished, timestamp(), id
   );
-  writeAudit(db, {
+  await writeAudit(db, {
     adminId: req.admin.id,
     action: 'product.update',
     targetType: 'product',
@@ -293,16 +293,16 @@ router.put('/products/:id', requirePermission('products.write'), route((req, res
     detail: { name: input.name, price: input.price, stock: input.stock, isPublished: input.isPublished },
     ip: requestIp(req)
   });
-  res.json(mapProduct(loadAdminProduct(db, id)));
+  res.json(mapProduct(await loadAdminProduct(db, id)));
 }));
 
-router.delete('/products/:id', requirePermission('products.write'), route((req, res) => {
+router.delete('/products/:id', requirePermission('products.write'), route(async (req, res) => {
   const id = idParam(req.params.id);
   const db = getDb();
-  const current = db.prepare('SELECT id, name FROM products WHERE id = ?').get(id);
+  const current = await db.prepare('SELECT id, name FROM products WHERE id = ?').get(id);
   if (!current) throw new HttpError(404, '找不到這個商品');
-  db.prepare('DELETE FROM products WHERE id = ?').run(id);
-  writeAudit(db, {
+  await db.prepare('DELETE FROM products WHERE id = ?').run(id);
+  await writeAudit(db, {
     adminId: req.admin.id,
     action: 'product.delete',
     targetType: 'product',
@@ -313,18 +313,18 @@ router.delete('/products/:id', requirePermission('products.write'), route((req, 
   res.json({ ok: true });
 }));
 
-router.post('/categories', requirePermission('categories.write'), route((req, res) => {
+router.post('/categories', requirePermission('categories.write'), route(async (req, res) => {
   const name = requiredText(req.body?.name, 40, '分類名稱');
   const description = optionalText(req.body?.description, 200, '分類說明');
   const db = getDb();
-  const sort = db.prepare('SELECT COALESCE(MAX(sort_order), 0) AS n FROM categories').get().n + 1;
-  const info = db.prepare(
+  const sort = (await db.prepare('SELECT COALESCE(MAX(sort_order), 0) AS n FROM categories').get()).n + 1;
+  const info = await db.prepare(
     'INSERT INTO categories (name, slug, description, sort_order) VALUES (?, ?, ?, ?)'
   ).run(name, `draft-${Date.now()}`, description, sort);
   const id = Number(info.lastInsertRowid);
-  db.prepare('UPDATE categories SET slug = ? WHERE id = ?').run(`category-${id}`, id);
-  const row = db.prepare('SELECT * FROM categories WHERE id = ?').get(id);
-  writeAudit(db, {
+  await db.prepare('UPDATE categories SET slug = ? WHERE id = ?').run(`category-${id}`, id);
+  const row = await db.prepare('SELECT * FROM categories WHERE id = ?').get(id);
+  await writeAudit(db, {
     adminId: req.admin.id,
     action: 'category.create',
     targetType: 'category',
@@ -368,8 +368,8 @@ function articleBody(body) {
   };
 }
 
-function loadArticle(db, id) {
-  return db.prepare(`
+async function loadArticle(db, id) {
+  return await db.prepare(`
     SELECT ${ARTICLE_SELECT}
     FROM articles a
     LEFT JOIN admins ON admins.id = a.author_admin_id
@@ -377,8 +377,8 @@ function loadArticle(db, id) {
   `).get(id);
 }
 
-router.get('/articles', requireAny('articles.read', 'articles.write'), route((req, res) => {
-  const rows = getDb().prepare(`
+router.get('/articles', requireAny('articles.read', 'articles.write'), route(async (req, res) => {
+  const rows = await getDb().prepare(`
     SELECT ${ARTICLE_SELECT}
     FROM articles a
     LEFT JOIN admins ON admins.id = a.author_admin_id
@@ -387,10 +387,10 @@ router.get('/articles', requireAny('articles.read', 'articles.write'), route((re
   res.json(rows.map(mapArticle));
 }));
 
-router.post('/articles', requirePermission('articles.write'), route((req, res) => {
+router.post('/articles', requirePermission('articles.write'), route(async (req, res) => {
   const input = articleBody(req.body || {});
   const db = getDb();
-  const info = db.prepare(`
+  const info = await db.prepare(`
     INSERT INTO articles (title, slug, summary, content, cover_image, is_published, author_admin_id, published_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
@@ -404,8 +404,8 @@ router.post('/articles', requirePermission('articles.write'), route((req, res) =
     input.publishedAt
   );
   const id = Number(info.lastInsertRowid);
-  db.prepare('UPDATE articles SET slug = ? WHERE id = ?').run(`article-${id}`, id);
-  writeAudit(db, {
+  await db.prepare('UPDATE articles SET slug = ? WHERE id = ?').run(`article-${id}`, id);
+  await writeAudit(db, {
     adminId: req.admin.id,
     action: 'article.create',
     targetType: 'article',
@@ -413,16 +413,16 @@ router.post('/articles', requirePermission('articles.write'), route((req, res) =
     detail: { title: input.title, publishedAt: input.publishedAt },
     ip: requestIp(req)
   });
-  res.status(201).json(mapArticle(loadArticle(db, id)));
+  res.status(201).json(mapArticle(await loadArticle(db, id)));
 }));
 
-router.put('/articles/:id', requirePermission('articles.write'), route((req, res) => {
+router.put('/articles/:id', requirePermission('articles.write'), route(async (req, res) => {
   const id = idParam(req.params.id);
   const input = articleBody(req.body || {});
   const db = getDb();
-  const current = db.prepare('SELECT id FROM articles WHERE id = ?').get(id);
+  const current = await db.prepare('SELECT id FROM articles WHERE id = ?').get(id);
   if (!current) throw new HttpError(404, '找不到這篇文章');
-  db.prepare(`
+  await db.prepare(`
     UPDATE articles
     SET title = ?, summary = ?, content = ?, cover_image = ?, is_published = ?, published_at = ?, updated_at = ?
     WHERE id = ?
@@ -430,7 +430,7 @@ router.put('/articles/:id', requirePermission('articles.write'), route((req, res
     input.title, input.summary, input.content, input.coverImage,
     input.isPublished, input.publishedAt, timestamp(), id
   );
-  writeAudit(db, {
+  await writeAudit(db, {
     adminId: req.admin.id,
     action: 'article.update',
     targetType: 'article',
@@ -438,16 +438,16 @@ router.put('/articles/:id', requirePermission('articles.write'), route((req, res
     detail: { title: input.title, isPublished: input.isPublished, publishedAt: input.publishedAt },
     ip: requestIp(req)
   });
-  res.json(mapArticle(loadArticle(db, id)));
+  res.json(mapArticle(await loadArticle(db, id)));
 }));
 
-router.delete('/articles/:id', requirePermission('articles.write'), route((req, res) => {
+router.delete('/articles/:id', requirePermission('articles.write'), route(async (req, res) => {
   const id = idParam(req.params.id);
   const db = getDb();
-  const current = db.prepare('SELECT id, title FROM articles WHERE id = ?').get(id);
+  const current = await db.prepare('SELECT id, title FROM articles WHERE id = ?').get(id);
   if (!current) throw new HttpError(404, '找不到這篇文章');
-  db.prepare('DELETE FROM articles WHERE id = ?').run(id);
-  writeAudit(db, {
+  await db.prepare('DELETE FROM articles WHERE id = ?').run(id);
+  await writeAudit(db, {
     adminId: req.admin.id,
     action: 'article.delete',
     targetType: 'article',
@@ -458,31 +458,31 @@ router.delete('/articles/:id', requirePermission('articles.write'), route((req, 
   res.json({ ok: true });
 }));
 
-router.get('/orders', requirePermission('orders.read'), route((req, res) => {
-  res.json(listOrders(getDb()));
+router.get('/orders', requirePermission('orders.read'), route(async (req, res) => {
+  res.json(await listOrders(getDb()));
 }));
 
-router.patch('/orders/:id/tracking', requirePermission('orders.write'), route((req, res) => {
+router.patch('/orders/:id/tracking', requirePermission('orders.write'), route(async (req, res) => {
   const id = idParam(req.params.id);
-  const order = setTracking(getDb(), id, req.body?.trackingNo, {
+  const order = await setTracking(getDb(), id, req.body?.trackingNo, {
     adminId: req.admin.id,
     ip: requestIp(req)
   });
   res.json(order);
 }));
 
-router.patch('/orders/:id/status', requirePermission('orders.write'), route((req, res) => {
+router.patch('/orders/:id/status', requirePermission('orders.write'), route(async (req, res) => {
   const id = idParam(req.params.id);
   const status = requiredText(req.body?.status, 20, '訂單狀態');
-  const order = setOrderStatus(getDb(), id, status, {
+  const order = await setOrderStatus(getDb(), id, status, {
     adminId: req.admin.id,
     ip: requestIp(req)
   });
   res.json(order);
 }));
 
-router.get('/members', requirePermission('members.read'), route((req, res) => {
-  const rows = getDb().prepare(
+router.get('/members', requirePermission('members.read'), route(async (req, res) => {
+  const rows = await getDb().prepare(
     'SELECT id, name, email, phone, line_id, created_at FROM members ORDER BY id DESC'
   ).all();
   res.json(rows.map(mapMember));
@@ -493,27 +493,27 @@ router.post('/uploads', requireAny('products.write', 'articles.write'), route(as
   res.status(201).json({ url });
 }));
 
-router.delete('/uploads', requireAny('products.write', 'articles.write'), route((req, res) => {
+router.delete('/uploads', requireAny('products.write', 'articles.write'), route(async (req, res) => {
   const image = cleanImagePath(req.body?.image);
   if (!image.startsWith('/uploads/')) throw new HttpError(400, '只能刪除上傳的圖片');
-  const removed = releaseImage(getDb(), image);
+  const removed = await releaseImage(getDb(), image);
   if (!removed) throw new HttpError(409, '這張圖片仍被使用');
   res.json({ ok: true });
 }));
 
-router.get('/roles', requireAny('admins.read', 'permissions.write'), route((req, res) => {
+router.get('/roles', requireAny('admins.read', 'permissions.write'), route(async (req, res) => {
   const db = getDb();
-  const roles = db.prepare(`
+  const roles = await Promise.all((await db.prepare(`
     SELECT id, code, name, description, role_level
     FROM roles
     ORDER BY role_level, id
-  `).all().map((role) => {
-    const codes = db.prepare(`
+  `).all()).map(async (role) => {
+    const codes = (await db.prepare(`
       SELECT p.code
       FROM permissions p
       JOIN role_permissions rp ON rp.permission_id = p.id
       WHERE rp.role_id = ?
-    `).all(role.id).map((row) => row.code);
+    `).all(role.id)).map((row) => row.code);
     return {
       id: role.id,
       code: role.code,
@@ -523,17 +523,17 @@ router.get('/roles', requireAny('admins.read', 'permissions.write'), route((req,
       modules: modulesFor(codes),
       locked: role.code === 'super_admin'
     };
-  });
+  }));
   res.json({
     modules: MODULES.map((item) => ({ code: item.code, name: item.name })),
     roles
   });
 }));
 
-router.put('/roles/:id/modules', requirePermission('permissions.write'), route((req, res) => {
+router.put('/roles/:id/modules', requirePermission('permissions.write'), route(async (req, res) => {
   const id = idParam(req.params.id);
   const db = getDb();
-  const role = db.prepare('SELECT id, code, name FROM roles WHERE id = ?').get(id);
+  const role = await db.prepare('SELECT id, code, name FROM roles WHERE id = ?').get(id);
   if (!role) throw new HttpError(404, '找不到這個角色');
   if (role.code === 'super_admin') throw new HttpError(400, '最大管理者固定擁有全部模組');
   const requested = Array.isArray(req.body?.modules) ? req.body.modules : null;
@@ -543,17 +543,17 @@ router.put('/roles/:id/modules', requirePermission('permissions.write'), route((
   const codes = [...new Set(MODULES
     .filter((item) => requested.includes(item.code))
     .flatMap((item) => item.permissions))];
-  const permissionIds = db.prepare('SELECT id, code FROM permissions').all();
-  db.exec('BEGIN IMMEDIATE');
+  const permissionIds = await db.prepare('SELECT id, code FROM permissions').all();
+  await db.exec('BEGIN IMMEDIATE');
   try {
-    db.prepare('DELETE FROM role_permissions WHERE role_id = ?').run(id);
+    await db.prepare('DELETE FROM role_permissions WHERE role_id = ?').run(id);
     const insert = db.prepare('INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)');
     for (const code of codes) {
       const permission = permissionIds.find((item) => item.code === code);
       if (!permission) throw new HttpError(400, '權限資料不完整');
-      insert.run(id, permission.id);
+      await insert.run(id, permission.id);
     }
-    writeAudit(db, {
+    await writeAudit(db, {
       adminId: req.admin.id,
       action: 'role.permissions',
       targetType: 'role',
@@ -561,15 +561,15 @@ router.put('/roles/:id/modules', requirePermission('permissions.write'), route((
       detail: { role: role.name, modules: requested },
       ip: requestIp(req)
     });
-    db.exec('COMMIT');
+    await db.exec('COMMIT');
   } catch (error) {
-    try { db.exec('ROLLBACK'); } catch (rollbackError) { /* 沒有進行中的交易時略過 */ }
+    try { await db.exec('ROLLBACK'); } catch (rollbackError) { /* 沒有進行中的交易時略過 */ }
     throw error;
   }
   res.json({ ok: true, modules: modulesFor(codes) });
 }));
 
-router.post('/admins', requirePermission('admins.write'), route((req, res) => {
+router.post('/admins', requirePermission('admins.write'), route(async (req, res) => {
   const name = requiredText(req.body?.name, 40, '名稱');
   const username = requiredText(req.body?.username, 40, '帳號').toLowerCase();
   const email = requiredEmail(req.body?.email);
@@ -578,20 +578,20 @@ router.post('/admins', requirePermission('admins.write'), route((req, res) => {
   if (!/^[a-z0-9]{3,20}$/.test(username)) throw new HttpError(400, '帳號請使用 3 到 20 個英數小寫');
   if (password.length < 8 || password.length > 72) throw new HttpError(400, '密碼請設定 8 到 72 個字元');
   const db = getDb();
-  const role = db.prepare('SELECT id, name, code FROM roles WHERE id = ?').get(roleId);
+  const role = await db.prepare('SELECT id, name, code FROM roles WHERE id = ?').get(roleId);
   if (!role) throw new HttpError(400, '請選擇有效的角色');
-  if (db.prepare('SELECT id FROM admins WHERE username = ?').get(username)) {
+  if (await db.prepare('SELECT id FROM admins WHERE username = ?').get(username)) {
     throw new HttpError(400, '這個帳號已經有人使用');
   }
-  if (db.prepare('SELECT id FROM admins WHERE email = ?').get(email)) {
+  if (await db.prepare('SELECT id FROM admins WHERE email = ?').get(email)) {
     throw new HttpError(400, '這個電子郵件已經有人使用');
   }
-  const info = db.prepare(`
+  const info = await db.prepare(`
     INSERT INTO admins (role_id, name, username, email, password_hash)
     VALUES (?, ?, ?, ?, ?)
   `).run(roleId, name, username, email, hashPassword(password));
   const id = Number(info.lastInsertRowid);
-  writeAudit(db, {
+  await writeAudit(db, {
     adminId: req.admin.id,
     action: 'admin.create',
     targetType: 'admin',
@@ -602,9 +602,9 @@ router.post('/admins', requirePermission('admins.write'), route((req, res) => {
   res.status(201).json({ id, name, username, roleName: role.name });
 }));
 
-router.get('/admins', requirePermission('admins.read'), route((req, res) => {
-  const rows = getDb().prepare(`
-    SELECT a.id, a.name, a.username, a.email, a.is_active, a.created_at,
+router.get('/admins', requirePermission('admins.read'), route(async (req, res) => {
+  const rows = await getDb().prepare(`
+    SELECT a.id, a.name, a.username, a.email, a.is_active, a.created_at, a.role_id,
            r.name AS role_name, r.code AS role_code, r.role_level
     FROM admins a
     JOIN roles r ON r.id = a.role_id
@@ -616,6 +616,7 @@ router.get('/admins', requirePermission('admins.read'), route((req, res) => {
     username: row.username,
     email: row.email,
     isActive: !!row.is_active,
+    roleId: row.role_id,
     roleName: row.role_name,
     roleCode: row.role_code,
     roleLevel: row.role_level,
@@ -623,15 +624,100 @@ router.get('/admins', requirePermission('admins.read'), route((req, res) => {
   })));
 }));
 
-router.patch('/admins/:id', requirePermission('admins.write'), route((req, res) => {
+router.put('/admins/:id', requirePermission('admins.write'), route(async (req, res) => {
+  const id = idParam(req.params.id);
+  const db = getDb();
+  const current = await db.prepare(`
+    SELECT a.id, a.username, a.role_id, r.code AS role_code
+    FROM admins a JOIN roles r ON r.id = a.role_id WHERE a.id = ?
+  `).get(id);
+  if (!current) throw new HttpError(404, '找不到這個管理員');
+  const name = requiredText(req.body?.name, 40, '名稱');
+  const username = requiredText(req.body?.username, 40, '帳號').toLowerCase();
+  const email = requiredEmail(req.body?.email);
+  const roleId = requiredInt(req.body?.roleId, '角色', { min: 1 });
+  const password = String(req.body?.password || '');
+  if (!/^[a-z0-9]{3,20}$/.test(username)) throw new HttpError(400, '帳號請使用 3 到 20 個英數小寫');
+  if (password !== '' && (password.length < 8 || password.length > 72)) throw new HttpError(400, '密碼請設定 8 到 72 個字元');
+  if (id === req.admin.id && roleId !== current.role_id) throw new HttpError(400, '不能修改自己的角色');
+  const role = await db.prepare('SELECT id, name, code FROM roles WHERE id = ?').get(roleId);
+  if (!role) throw new HttpError(400, '請選擇有效的角色');
+  if (current.role_code === 'super_admin' && role.code !== 'super_admin') {
+    const others = await db.prepare(`
+      SELECT COUNT(*) AS total FROM admins a JOIN roles r ON r.id = a.role_id
+      WHERE r.code = 'super_admin' AND a.id <> ?
+    `).get(id);
+    if (Number(others.total) < 1) throw new HttpError(400, '至少要保留一位最大管理者');
+  }
+  if (await db.prepare('SELECT id FROM admins WHERE username = ? AND id <> ?').get(username, id)) {
+    throw new HttpError(400, '這個帳號已經有人使用');
+  }
+  if (await db.prepare('SELECT id FROM admins WHERE email = ? AND id <> ?').get(email, id)) {
+    throw new HttpError(400, '這個電子郵件已經有人使用');
+  }
+  if (password !== '') {
+    await db.prepare(`
+      UPDATE admins SET role_id = ?, name = ?, username = ?, email = ?, password_hash = ?, updated_at = ? WHERE id = ?
+    `).run(roleId, name, username, email, hashPassword(password), timestamp(), id);
+  } else {
+    await db.prepare(`
+      UPDATE admins SET role_id = ?, name = ?, username = ?, email = ?, updated_at = ? WHERE id = ?
+    `).run(roleId, name, username, email, timestamp(), id);
+  }
+  if (username !== current.username) {
+    await db.prepare('DELETE FROM admin_login_locks WHERE username = ?').run(current.username);
+  }
+  await writeAudit(db, {
+    adminId: req.admin.id,
+    action: 'admin.update',
+    targetType: 'admin',
+    targetId: id,
+    detail: { username, role: role.name },
+    ip: requestIp(req)
+  });
+  res.json({ ok: true });
+}));
+
+router.delete('/admins/:id', requirePermission('admins.write'), route(async (req, res) => {
+  const id = idParam(req.params.id);
+  if (id === req.admin.id) throw new HttpError(400, '不能刪除自己的帳號');
+  const db = getDb();
+  const current = await db.prepare(`
+    SELECT a.id, a.username, r.code AS role_code
+    FROM admins a JOIN roles r ON r.id = a.role_id WHERE a.id = ?
+  `).get(id);
+  if (!current) throw new HttpError(404, '找不到這個管理員');
+  if (current.role_code === 'super_admin') {
+    const others = await db.prepare(`
+      SELECT COUNT(*) AS total FROM admins a JOIN roles r ON r.id = a.role_id
+      WHERE r.code = 'super_admin' AND a.id <> ?
+    `).get(id);
+    if (Number(others.total) < 1) throw new HttpError(400, '至少要保留一位最大管理者');
+  }
+  await db.prepare('UPDATE articles SET author_admin_id = NULL WHERE author_admin_id = ?').run(id);
+  await db.prepare('UPDATE audit_logs SET admin_id = NULL WHERE admin_id = ?').run(id);
+  await db.prepare('DELETE FROM admins WHERE id = ?').run(id);
+  await db.prepare('DELETE FROM admin_login_locks WHERE username = ?').run(current.username);
+  await writeAudit(db, {
+    adminId: req.admin.id,
+    action: 'admin.delete',
+    targetType: 'admin',
+    targetId: id,
+    detail: { username: current.username },
+    ip: requestIp(req)
+  });
+  res.json({ ok: true });
+}));
+
+router.patch('/admins/:id', requirePermission('admins.write'), route(async (req, res) => {
   const id = idParam(req.params.id);
   if (id === req.admin.id) throw new HttpError(400, '不能停用自己的帳號');
   const isActive = readFlag(req.body?.isActive) ? 1 : 0;
   const db = getDb();
-  const current = db.prepare('SELECT id, username FROM admins WHERE id = ?').get(id);
+  const current = await db.prepare('SELECT id, username FROM admins WHERE id = ?').get(id);
   if (!current) throw new HttpError(404, '找不到這個管理員');
-  db.prepare('UPDATE admins SET is_active = ?, updated_at = ? WHERE id = ?').run(isActive, timestamp(), id);
-  writeAudit(db, {
+  await db.prepare('UPDATE admins SET is_active = ?, updated_at = ? WHERE id = ?').run(isActive, timestamp(), id);
+  await writeAudit(db, {
     adminId: req.admin.id,
     action: 'admin.status',
     targetType: 'admin',
@@ -691,8 +777,8 @@ function mapAdminBanner(row) {
   };
 }
 
-router.get('/banners', requirePermission('products.write'), route((req, res) => {
-  const rows = getDb().prepare(`
+router.get('/banners', requirePermission('products.write'), route(async (req, res) => {
+  const rows = await getDb().prepare(`
     SELECT id, eyebrow, title, body, link_href, link_label, image, alt_text,
            image_width, image_height, sort_order, is_published
     FROM banners
@@ -701,10 +787,10 @@ router.get('/banners', requirePermission('products.write'), route((req, res) => 
   res.json(rows.map(mapAdminBanner));
 }));
 
-router.post('/banners', requirePermission('products.write'), route((req, res) => {
+router.post('/banners', requirePermission('products.write'), route(async (req, res) => {
   const input = bannerBody(req.body || {});
   const db = getDb();
-  const info = db.prepare(`
+  const info = await db.prepare(`
     INSERT INTO banners (
       eyebrow, title, body, link_href, link_label, image, alt_text,
       image_width, image_height, sort_order, is_published
@@ -714,7 +800,7 @@ router.post('/banners', requirePermission('products.write'), route((req, res) =>
     input.image, input.altText, input.imageWidth, input.imageHeight, input.sortOrder, input.isPublished
   );
   const id = Number(info.lastInsertRowid);
-  writeAudit(db, {
+  await writeAudit(db, {
     adminId: req.admin.id,
     action: 'banner.create',
     targetType: 'banner',
@@ -722,16 +808,16 @@ router.post('/banners', requirePermission('products.write'), route((req, res) =>
     detail: { title: input.title },
     ip: requestIp(req)
   });
-  res.status(201).json(mapAdminBanner(db.prepare('SELECT * FROM banners WHERE id = ?').get(id)));
+  res.status(201).json(mapAdminBanner(await db.prepare('SELECT * FROM banners WHERE id = ?').get(id)));
 }));
 
-router.put('/banners/:id', requirePermission('products.write'), route((req, res) => {
+router.put('/banners/:id', requirePermission('products.write'), route(async (req, res) => {
   const id = idParam(req.params.id);
   const input = bannerBody(req.body || {});
   const db = getDb();
-  const current = db.prepare('SELECT id, image FROM banners WHERE id = ?').get(id);
+  const current = await db.prepare('SELECT id, image FROM banners WHERE id = ?').get(id);
   if (!current) throw new HttpError(404, '找不到這張主視覺');
-  db.prepare(`
+  await db.prepare(`
     UPDATE banners
     SET eyebrow = ?, title = ?, body = ?, link_href = ?, link_label = ?,
         image = ?, alt_text = ?, image_width = ?, image_height = ?,
@@ -742,8 +828,8 @@ router.put('/banners/:id', requirePermission('products.write'), route((req, res)
     input.image, input.altText, input.imageWidth, input.imageHeight,
     input.sortOrder, input.isPublished, timestamp(), id
   );
-  if (current.image && current.image !== input.image) releaseImage(db, current.image);
-  writeAudit(db, {
+  if (current.image && current.image !== input.image) await releaseImage(db, current.image);
+  await writeAudit(db, {
     adminId: req.admin.id,
     action: 'banner.update',
     targetType: 'banner',
@@ -751,18 +837,18 @@ router.put('/banners/:id', requirePermission('products.write'), route((req, res)
     detail: { title: input.title },
     ip: requestIp(req)
   });
-  res.json(mapAdminBanner(db.prepare('SELECT * FROM banners WHERE id = ?').get(id)));
+  res.json(mapAdminBanner(await db.prepare('SELECT * FROM banners WHERE id = ?').get(id)));
 }));
 
-router.delete('/banners/:id/image', requirePermission('products.write'), route((req, res) => {
+router.delete('/banners/:id/image', requirePermission('products.write'), route(async (req, res) => {
   const id = idParam(req.params.id);
   const db = getDb();
-  const current = db.prepare('SELECT id, image FROM banners WHERE id = ?').get(id);
+  const current = await db.prepare('SELECT id, image FROM banners WHERE id = ?').get(id);
   if (!current) throw new HttpError(404, '找不到這張主視覺');
   const previous = current.image;
-  db.prepare('UPDATE banners SET image = ?, updated_at = ? WHERE id = ?').run('', timestamp(), id);
-  releaseImage(db, previous);
-  writeAudit(db, {
+  await db.prepare('UPDATE banners SET image = ?, updated_at = ? WHERE id = ?').run('', timestamp(), id);
+  await releaseImage(db, previous);
+  await writeAudit(db, {
     adminId: req.admin.id,
     action: 'banner.update',
     targetType: 'banner',
@@ -773,14 +859,14 @@ router.delete('/banners/:id/image', requirePermission('products.write'), route((
   res.json({ ok: true });
 }));
 
-router.delete('/banners/:id', requirePermission('products.write'), route((req, res) => {
+router.delete('/banners/:id', requirePermission('products.write'), route(async (req, res) => {
   const id = idParam(req.params.id);
   const db = getDb();
-  const current = db.prepare('SELECT id, title, image FROM banners WHERE id = ?').get(id);
+  const current = await db.prepare('SELECT id, title, image FROM banners WHERE id = ?').get(id);
   if (!current) throw new HttpError(404, '找不到這張主視覺');
-  db.prepare('DELETE FROM banners WHERE id = ?').run(id);
-  releaseImage(db, current.image);
-  writeAudit(db, {
+  await db.prepare('DELETE FROM banners WHERE id = ?').run(id);
+  await releaseImage(db, current.image);
+  await writeAudit(db, {
     adminId: req.admin.id,
     action: 'banner.delete',
     targetType: 'banner',
@@ -811,11 +897,11 @@ function inquiryBody(body) {
   };
 }
 
-router.get('/inquiries', requireAny('inquiries.read', 'inquiries.write'), route((req, res) => {
+router.get('/inquiries', requireAny('inquiries.read', 'inquiries.write'), route(async (req, res) => {
   const q = String(req.query.q || '').trim().slice(0, 40);
   const db = getDb();
   const rows = q
-    ? db.prepare(`
+    ? await db.prepare(`
         SELECT id, name, phone, email, message, created_at
         FROM inquiries
         WHERE name LIKE ? ESCAPE '\\'
@@ -825,7 +911,7 @@ router.get('/inquiries', requireAny('inquiries.read', 'inquiries.write'), route(
         ORDER BY id DESC
         LIMIT 200
       `).all(...Array(4).fill(`%${q.replace(/[\\%_]/g, (char) => `\\${char}`)}%`))
-    : db.prepare(`
+    : await db.prepare(`
         SELECT id, name, phone, email, message, created_at
         FROM inquiries
         ORDER BY id DESC
@@ -834,18 +920,18 @@ router.get('/inquiries', requireAny('inquiries.read', 'inquiries.write'), route(
   res.json(rows.map(mapInquiry));
 }));
 
-router.put('/inquiries/:id', requirePermission('inquiries.write'), route((req, res) => {
+router.put('/inquiries/:id', requirePermission('inquiries.write'), route(async (req, res) => {
   const id = idParam(req.params.id);
   const input = inquiryBody(req.body || {});
   const db = getDb();
-  const current = db.prepare('SELECT id FROM inquiries WHERE id = ?').get(id);
+  const current = await db.prepare('SELECT id FROM inquiries WHERE id = ?').get(id);
   if (!current) throw new HttpError(404, '找不到這則聯絡訊息');
-  db.prepare(`
+  await db.prepare(`
     UPDATE inquiries
     SET name = ?, phone = ?, email = ?, message = ?
     WHERE id = ?
   `).run(input.name, input.phone, input.email, input.message, id);
-  writeAudit(db, {
+  await writeAudit(db, {
     adminId: req.admin.id,
     action: 'inquiry.update',
     targetType: 'inquiry',
@@ -853,13 +939,13 @@ router.put('/inquiries/:id', requirePermission('inquiries.write'), route((req, r
     detail: { name: input.name },
     ip: requestIp(req)
   });
-  res.json(mapInquiry(db.prepare(`
+  res.json(mapInquiry(await db.prepare(`
     SELECT id, name, phone, email, message, created_at FROM inquiries WHERE id = ?
   `).get(id)));
 }));
 
-router.get('/audit-logs', requirePermission('audit.read'), route((req, res) => {
-  const rows = getDb().prepare(`
+router.get('/audit-logs', requirePermission('audit.read'), route(async (req, res) => {
+  const rows = await getDb().prepare(`
     SELECT l.id, l.admin_id, a.name AS admin_name, a.username, l.action,
            l.target_type, l.target_id, l.detail, l.ip_address, l.created_at
     FROM audit_logs l

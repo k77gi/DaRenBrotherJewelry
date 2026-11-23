@@ -1,5 +1,5 @@
-function writeAudit(db, entry) {
-  db.prepare(`
+async function writeAudit(db, entry) {
+  await db.prepare(`
     INSERT INTO audit_logs (admin_id, action, target_type, target_id, detail, ip_address)
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(

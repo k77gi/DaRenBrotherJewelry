@@ -7,9 +7,9 @@ async function loadProducts() {
       api('/categories'),
       api(current ? `/products?category=${encodeURIComponent(current)}` : '/products')
     ]);
-    const all = `<a class="chip${current ? '' : ' is-active'}" href="/products.html">全部</a>`;
+    const all = `<a class="chip${current ? '' : ' is-active'}" href="${siteUrl('/products.html')}">全部</a>`;
     chips.innerHTML = all + categories.map((category) => `
-      <a class="chip${current === category.slug ? ' is-active' : ''}" href="/products.html?category=${encodeURIComponent(category.slug)}">${esc(category.name)}</a>
+      <a class="chip${current === category.slug ? ' is-active' : ''}" href="${siteUrl(`/products.html?category=${encodeURIComponent(category.slug)}`)}">${esc(category.name)}</a>
     `).join('');
     const category = categories.find((item) => item.slug === current);
     document.getElementById('page-title').textContent = category ? category.name : '全部商品';

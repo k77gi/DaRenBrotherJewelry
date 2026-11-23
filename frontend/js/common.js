@@ -32,12 +32,35 @@ function paragraphs(text) {
 }
 
 function readableError(error) {
-  if (error instanceof TypeError) return '無法連上伺服器，請確認已經執行 npm start';
+  if (error instanceof TypeError) return '無法連上伺服器，請稍後再試';
   return error.message || '發生錯誤';
 }
 
 function queryParam(name) {
   return new URLSearchParams(location.search).get(name);
+}
+
+function siteBase() {
+  if (siteBase.cached !== undefined) return siteBase.cached;
+  const nodes = document.getElementsByTagName('script');
+  for (let i = nodes.length - 1; i >= 0; i -= 1) {
+    const raw = nodes[i].getAttribute('src') || '';
+    if (!/common\.js(?:\?|$)/.test(raw)) continue;
+    const path = new URL(nodes[i].src, location.href).pathname.replace(/\/js\/common\.js$/, '');
+    siteBase.cached = path === '/' ? '' : path.replace(/\/$/, '');
+    return siteBase.cached;
+  }
+  siteBase.cached = '';
+  return siteBase.cached;
+}
+
+function siteUrl(path) {
+  const value = String(path || '/');
+  if (/^(?:[a-z]+:|\/\/|data:)/i.test(value)) return value;
+  if (value.charAt(0) !== '/') return value;
+  const base = siteBase();
+  if (value === '/') return base === '' ? '/' : `${base}/`;
+  return base + value;
 }
 
 async function api(path, options = {}) {
@@ -48,7 +71,7 @@ async function api(path, options = {}) {
     const token = localStorage.getItem(key);
     if (token) headers.Authorization = `Bearer ${token}`;
   }
-  const response = await fetch(`/api${path}`, {
+  const response = await fetch(siteUrl(`/api${path}`), {
     method: options.method || 'GET',
     headers,
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined
@@ -115,8 +138,8 @@ function productCard(product) {
   const stock = product.stock > 0 ? `庫存 ${product.stock} 件` : '暫時缺貨';
   const image = product.images && product.images[0] ? product.images[0].src : '/images/products/generic.svg';
   return `
-    <a class="product-card" href="/product.html?id=${product.id}">
-      <img src="${esc(image)}" alt="${esc(product.name)}">
+    <a class="product-card" href="${siteUrl(`/product.html?id=${product.id}`)}">
+      <img src="${esc(siteUrl(image))}" alt="${esc(product.name)}">
       <div class="body">
         <p class="product-meta">${esc(product.categoryName)}</p>
         <h3>${esc(product.name)}</h3>
@@ -131,8 +154,8 @@ function productCard(product) {
 function articleCard(article) {
   const date = String(article.publishedAt || article.createdAt || '').slice(0, 10);
   return `
-    <a class="article-card" href="/article.html?id=${article.id}">
-      <img src="${esc(article.thumbnail)}" alt="">
+    <a class="article-card" href="${siteUrl(`/article.html?id=${article.id}`)}">
+      <img src="${esc(siteUrl(article.thumbnail))}" alt="">
       <div>
         <p class="eyebrow">${esc(date)}</p>
         <h3>${esc(article.title)}</h3>
@@ -156,11 +179,15 @@ function renderOrder(order) {
       <ul>${items}</ul>
       <p>商品 ${money(order.subtotal)}，運費 ${money(order.shippingFee)}，合計 <strong>${money(order.total)}</strong></p>
       <p>收件人 ${esc(order.buyerName)}，${esc(order.buyerPhone)}</p>
-      <p>${esc(order.shippingAddress)}</p>
+      ${order.cvsStoreId ? `
+        <p>門市代號 ${esc(order.cvsStoreId)}</p>
+        <p>超商名稱 ${esc(order.cvsStoreName)}</p>
+        <p>地址 ${esc(order.cvsAddress)}</p>
+      ` : `<p>${esc(order.shippingAddress)}</p>`}
       ${order.note ? `<p>備註：${esc(order.note)}</p>` : ''}
       ${order.paymentMethod ? `<p>付款方式：${esc(paymentLabel(order.paymentMethod))}</p>` : ''}
       ${order.trackingNo ? `<p>物流單號：${esc(order.trackingNo)}</p>` : ''}
-      ${order.status === 'pending' ? `<p><a href="/payment.html?no=${encodeURIComponent(order.orderNo)}">前往付款</a></p>` : ''}
+      ${order.status === 'pending' ? `<p><a href="${siteUrl(`/payment.html?no=${encodeURIComponent(order.orderNo)}`)}">前往付款</a></p>` : ''}
     </article>
   `;
 }
@@ -179,13 +206,13 @@ function mountChrome() {
     header.className = 'site-header';
     header.innerHTML = `
       <div class="wrap header-inner">
-        <a class="brand" href="/">大仁哥的珠寶小舖</a>
+        <a class="brand" href="${siteUrl('/')}">大仁哥的珠寶小舖</a>
         <nav class="nav" aria-label="主要選單">
-          <a class="nav-btn" href="/shop.html" data-nav="shop">珠寶小舖</a>
-          <a class="nav-btn" href="/blog.html" data-nav="blog">小白教室</a>
-          <a class="nav-btn" href="/contact.html" data-nav="contact">與我聯絡</a>
-          <a class="nav-btn" href="/member.html" data-nav="member" id="account-link">${esc(accountText)}</a>
-          <a class="cart-link" href="/cart.html" data-nav="cart" aria-label="購物車">
+          <a class="nav-btn" href="${siteUrl('/shop.html')}" data-nav="shop">珠寶小舖</a>
+          <a class="nav-btn" href="${siteUrl('/blog.html')}" data-nav="blog">小白教室</a>
+          <a class="nav-btn" href="${siteUrl('/contact.html')}" data-nav="contact">與我聯絡</a>
+          <a class="nav-btn" href="${siteUrl('/member.html')}" data-nav="member" id="account-link">${esc(accountText)}</a>
+          <a class="cart-link" href="${siteUrl('/cart.html')}" data-nav="cart" aria-label="購物車">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 7h15l-1.5 9h-12z"/><path d="M6 7 5 4H2"/><circle cx="9" cy="20" r="1.4"/><circle cx="17" cy="20" r="1.4"/></svg>
             <span id="cart-count">${cartCount()}</span>
           </a>

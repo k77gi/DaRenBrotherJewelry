@@ -10,11 +10,11 @@ async function saveMember(result) {
     try {
       await api('/members/qr/confirm', { method: 'POST', auth: 'member', body: { ticket } });
     } catch (error) {
-      location.href = `/member.html?login=${encodeURIComponent(ticket)}`;
+      location.href = siteUrl(`/member.html?login=${encodeURIComponent(ticket)}`);
       return;
     }
   }
-  location.href = '/member.html';
+  location.href = siteUrl('/member.html');
 }
 
 function startQrLogin() {
@@ -126,7 +126,7 @@ function bindQrApproval() {
     alert.hidden = true;
     try {
       await api('/members/qr/confirm', { method: 'POST', auth: 'member', body: { ticket } });
-      location.href = '/member.html';
+      location.href = siteUrl('/member.html');
     } catch (error) {
       alert.hidden = false;
       alert.textContent = readableError(error);

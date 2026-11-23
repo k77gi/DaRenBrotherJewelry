@@ -42,10 +42,10 @@ function placeholderEmail() {
   return `m${Date.now()}${Math.floor(Math.random() * 1000)}@members.local`;
 }
 
-function findByAccount(db, account) {
+async function findByAccount(db, account) {
   const text = String(account || '').trim();
   const phone = text.replace(/[\s()-]/g, '');
-  return db.prepare(`
+  return await db.prepare(`
     SELECT id, name, email, phone, line_id, password_hash, created_at
     FROM members
     WHERE lower(email) = lower(?)
@@ -54,7 +54,7 @@ function findByAccount(db, account) {
   `).get(text, phone, text);
 }
 
-router.post('/register', route((req, res) => {
+router.post('/register', route(async (req, res) => {
   const name = requiredText(req.body?.name, 40, '姓名');
   const password = readPassword(req.body?.password);
   const method = String(req.body?.method || 'email');
@@ -74,19 +74,19 @@ router.post('/register', route((req, res) => {
     phone = canonicalPhone(req.body?.phone, false);
     email = placeholderEmail();
   }
-  if (db.prepare('SELECT id FROM members WHERE lower(email) = lower(?)').get(email)) {
+  if (await db.prepare('SELECT id FROM members WHERE lower(email) = lower(?)').get(email)) {
     throw new HttpError(409, '這個電子郵件已經註冊');
   }
-  if (phone && db.prepare('SELECT id FROM members WHERE phone = ?').get(phone)) {
+  if (phone && await db.prepare('SELECT id FROM members WHERE phone = ?').get(phone)) {
     throw new HttpError(409, '這個電話號碼已經註冊');
   }
-  if (line && db.prepare('SELECT id FROM members WHERE lower(line_id) = lower(?)').get(line)) {
+  if (line && await db.prepare('SELECT id FROM members WHERE lower(line_id) = lower(?)').get(line)) {
     throw new HttpError(409, '這個 LINE ID 已經註冊');
   }
-  const info = db.prepare(
+  const info = await db.prepare(
     'INSERT INTO members (name, email, password_hash, phone, line_id) VALUES (?, ?, ?, ?, ?)'
   ).run(name, email, hashPassword(password), phone, line);
-  const member = db.prepare(
+  const member = await db.prepare(
     'SELECT id, name, email, phone, line_id, created_at FROM members WHERE id = ?'
   ).get(Number(info.lastInsertRowid));
   res.status(201).json({
@@ -95,11 +95,11 @@ router.post('/register', route((req, res) => {
   });
 }));
 
-router.post('/login', route((req, res) => {
+router.post('/login', route(async (req, res) => {
   const account = String(req.body?.account || req.body?.email || '').trim();
   if (!account) throw new HttpError(400, '請填寫電子郵件、電話或 LINE ID');
   const password = String(req.body?.password || '');
-  const member = findByAccount(getDb(), account);
+  const member = await findByAccount(getDb(), account);
   const hash = member ? member.password_hash : dummyHash;
   const matched = verifyPassword(password, hash);
   if (!member || !matched) throw new HttpError(401, '帳號或密碼不正確');
@@ -109,16 +109,16 @@ router.post('/login', route((req, res) => {
   });
 }));
 
-router.get('/me', requireMember, route((req, res) => {
-  const member = getDb().prepare(
+router.get('/me', requireMember, route(async (req, res) => {
+  const member = await getDb().prepare(
     'SELECT id, name, email, phone, line_id, created_at FROM members WHERE id = ?'
   ).get(req.auth.id);
   if (!member) throw new HttpError(401, '請先登入會員');
   res.json(publicMember(member));
 }));
 
-router.get('/orders', requireMember, route((req, res) => {
-  res.json(listOrders(getDb(), { memberId: req.auth.id }));
+router.get('/orders', requireMember, route(async (req, res) => {
+  res.json(await listOrders(getDb(), { memberId: req.auth.id }));
 }));
 
 function hashSecret(secret) {
@@ -132,8 +132,8 @@ function sameSecret(stored, secret) {
   return crypto.timingSafeEqual(left, right);
 }
 
-function ticketRow(db, ticket) {
-  return db.prepare(`
+async function ticketRow(db, ticket) {
+  return await db.prepare(`
     SELECT id, secret_hash, member_id, status,
            CASE WHEN expires_at <= datetime('now', 'localtime') THEN 1 ELSE 0 END AS expired
     FROM login_tickets
@@ -143,10 +143,10 @@ function ticketRow(db, ticket) {
 
 router.post('/qr/start', route(async (req, res) => {
   const db = getDb();
-  db.prepare("DELETE FROM login_tickets WHERE expires_at <= datetime('now', 'localtime') OR status = 'used'").run();
+  await db.prepare("DELETE FROM login_tickets WHERE expires_at <= datetime('now', 'localtime') OR status = 'used'").run();
   const ticket = crypto.randomBytes(16).toString('hex');
   const secret = crypto.randomBytes(24).toString('hex');
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO login_tickets (id, secret_hash, expires_at)
     VALUES (?, ?, datetime('now', 'localtime', '+5 minutes'))
   `).run(ticket, hashSecret(secret));
@@ -159,23 +159,23 @@ router.post('/qr/start', route(async (req, res) => {
   });
 }));
 
-router.post('/qr/poll', route((req, res) => {
+router.post('/qr/poll', route(async (req, res) => {
   const ticket = String(req.body?.ticket || '');
   const secret = String(req.body?.secret || '');
   const db = getDb();
-  const row = ticketRow(db, ticket);
+  const row = await ticketRow(db, ticket);
   if (!row || !sameSecret(row.secret_hash, secret)) throw new HttpError(404, '這個登入碼已失效');
   if (row.expired) {
-    db.prepare('DELETE FROM login_tickets WHERE id = ?').run(ticket);
+    await db.prepare('DELETE FROM login_tickets WHERE id = ?').run(ticket);
     return res.json({ status: 'expired' });
   }
   if (row.status === 'pending') return res.json({ status: 'pending' });
   if (row.status !== 'confirmed' || !row.member_id) throw new HttpError(410, '這個登入碼已經用過');
-  const claimed = db.prepare(
+  const claimed = await db.prepare(
     "UPDATE login_tickets SET status = 'used' WHERE id = ? AND status = 'confirmed'"
   ).run(ticket);
   if (!claimed.changes) throw new HttpError(410, '這個登入碼已經用過');
-  const member = db.prepare(
+  const member = await db.prepare(
     'SELECT id, name, email, phone, line_id, created_at FROM members WHERE id = ?'
   ).get(row.member_id);
   if (!member) throw new HttpError(404, '這個登入碼已失效');
@@ -186,15 +186,15 @@ router.post('/qr/poll', route((req, res) => {
   });
 }));
 
-router.post('/qr/confirm', requireMember, route((req, res) => {
+router.post('/qr/confirm', requireMember, route(async (req, res) => {
   const ticket = String(req.body?.ticket || '');
   const db = getDb();
-  const row = ticketRow(db, ticket);
+  const row = await ticketRow(db, ticket);
   if (!row || row.expired || row.status === 'used') throw new HttpError(410, '這個登入碼已失效');
   if (row.status === 'confirmed' && row.member_id !== req.auth.id) {
     throw new HttpError(409, '這個登入碼已經被其他會員確認');
   }
-  db.prepare(`
+  await db.prepare(`
     UPDATE login_tickets
     SET member_id = ?, status = 'confirmed'
     WHERE id = ? AND status IN ('pending', 'confirmed')

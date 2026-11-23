@@ -17,6 +17,8 @@ const ACTION_LABEL = {
   'order.tracking': '更新物流單號',
   'admin.status': '變更管理員狀態',
   'admin.create': '新增管理員',
+  'admin.update': '修改管理員',
+  'admin.delete': '刪除管理員',
   'role.permissions': '調整角色權限'
 };
 
@@ -30,7 +32,9 @@ const state = {
   bannerDraft: null,
   banners: [],
   inquiryDraft: null,
-  inquiryQuery: ''
+  inquiryQuery: '',
+  admins: [],
+  adminDraft: null
 };
 
 const PANELS = [
@@ -377,7 +381,9 @@ async function renderOrders() {
     return `
       <tr>
         <td>${esc(order.orderNo)}<br><span class="muted">${esc(order.createdAt)}</span></td>
-        <td>${esc(order.buyerName)}<br><span class="muted">${esc(order.buyerPhone)}</span><br>${esc(order.shippingAddress)}</td>
+        <td>${esc(order.buyerName)}<br><span class="muted">${esc(order.buyerPhone)}</span><br>${order.cvsStoreId
+          ? `門市代號 ${esc(order.cvsStoreId)}<br>${esc(order.cvsStoreName)}<br>${esc(order.cvsAddress)}`
+          : esc(order.shippingAddress)}</td>
         <td>${money(order.total)}</td>
         <td>${pay}<br><span class="muted">${esc(order.paymentMethod ? paymentLabel(order.paymentMethod) : '尚未選擇')}</span></td>
         <td>${status}</td>
@@ -479,37 +485,47 @@ async function renderInquiries() {
 }
 
 async function renderAdmins() {
-  const admins = await api('/admin/admins', { auth: 'admin' });
-  const rows = admins.map((admin) => {
+  state.admins = await api('/admin/admins', { auth: 'admin' });
+  const draft = state.adminDraft;
+  const rows = state.admins.map((admin) => {
     const mine = admin.id === state.me.id;
-    const button = can('admins.write') && !mine
-      ? `<button class="btn secondary" type="button" data-action="toggle-admin" data-id="${admin.id}" data-active="${admin.isActive ? '1' : '0'}" data-name="${esc(admin.name)}">${admin.isActive ? '停用' : '啟用'}</button>`
-      : '';
+    const actions = can('admins.write') ? `
+      <button class="btn secondary" type="button" data-action="edit-admin" data-id="${admin.id}">編輯</button>
+      ${mine ? '' : `<button class="btn secondary" type="button" data-action="toggle-admin" data-id="${admin.id}" data-active="${admin.isActive ? '1' : '0'}" data-name="${esc(admin.name)}">${admin.isActive ? '停用' : '啟用'}</button>`}
+      ${mine ? '' : `<button class="btn danger" type="button" data-action="delete-admin" data-id="${admin.id}" data-name="${esc(admin.name)}">刪除</button>`}
+    ` : '';
     return `
       <tr>
         <td>${esc(admin.name)}${mine ? '（自己）' : ''}</td>
         <td>${esc(admin.username)}</td>
         <td>${esc(admin.roleName)}</td>
         <td>${admin.isActive ? '啟用' : '停用'}</td>
-        <td>${button}</td>
+        <td>${actions}</td>
       </tr>
     `;
   }).join('');
   const roles = can('admins.write') ? await api('/admin/roles', { auth: 'admin' }) : { roles: [] };
-  const roleOptions = roles.roles.map((role) => `<option value="${role.id}">${esc(role.name)}</option>`).join('');
+  const roleOptions = roles.roles.map((role) => `<option value="${role.id}" ${draft && draft.roleId === role.id ? 'selected' : ''}>${esc(role.name)}</option>`).join('');
+  const editingSelf = draft && draft.id === state.me.id;
   document.getElementById('panel').innerHTML = `
     <h1>管理員</h1>
     ${can('admins.write') ? `
       <form id="admin-form" class="panel">
-        <h2>新增管理員</h2>
+        <h2>${draft ? '編輯管理員' : '新增管理員'}</h2>
+        <input type="hidden" name="adminId" value="${draft ? draft.id : ''}">
         <div class="form-grid">
-          <label class="field">名稱<input name="name" required maxlength="40"></label>
-          <label class="field">帳號<input name="username" required maxlength="20" autocomplete="off"></label>
-          <label class="field">電子郵件<input name="email" type="email" required maxlength="120"></label>
-          <label class="field">密碼<input name="password" type="password" required minlength="8" autocomplete="new-password"></label>
-          <label class="field">角色<select name="roleId" required>${roleOptions}</select></label>
+          <label class="field">名稱<input name="name" required maxlength="40" value="${draft ? esc(draft.name) : ''}"></label>
+          <label class="field">帳號<input name="username" required maxlength="20" autocomplete="off" value="${draft ? esc(draft.username) : ''}"></label>
+          <label class="field">電子郵件<input name="email" type="email" required maxlength="120" value="${draft ? esc(draft.email) : ''}"></label>
+          <label class="field">密碼<input name="password" type="password" ${draft ? '' : 'required minlength="8"'} maxlength="72" autocomplete="new-password" placeholder="${draft ? '不修改請留空' : ''}"></label>
+          ${editingSelf
+            ? `<input type="hidden" name="roleId" value="${draft.roleId}"><p class="muted">不能修改自己的角色。</p>`
+            : `<label class="field">角色<select name="roleId" required>${roleOptions}</select></label>`}
         </div>
-        <button class="btn" type="submit">新增管理員</button>
+        <div class="btn-row">
+          <button class="btn" type="submit">${draft ? '儲存修改' : '新增管理員'}</button>
+          ${draft ? '<button class="btn secondary" type="button" data-action="cancel-admin">取消</button>' : ''}
+        </div>
       </form>
     ` : ''}
     <div class="table-wrap">
@@ -581,7 +597,7 @@ async function uploadImage(file) {
   const data = new FormData();
   data.append('file', file);
   const token = localStorage.getItem('daren-admin-token');
-  const response = await fetch('/api/admin/uploads', {
+  const response = await fetch(siteUrl('/api/admin/uploads'), {
     method: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: data
@@ -604,7 +620,7 @@ function fieldRow(field = { label: '', value: '' }) {
 function imageCard(src, inputName) {
   return `
     <div class="image-card">
-      <img src="${esc(src)}" alt="">
+      <img src="${esc(siteUrl(src))}" alt="">
       <input type="hidden" name="${inputName}" value="${esc(src)}">
       <button class="btn secondary" type="button" data-action="replace-image">修改</button>
       <button class="btn danger" type="button" data-action="remove-image">刪除</button>
@@ -730,17 +746,20 @@ async function saveInquiry(form) {
 }
 
 async function saveAdmin(form) {
-  await api('/admin/admins', {
-    method: 'POST',
-    auth: 'admin',
-    body: {
-      name: form.name.value,
-      username: form.username.value,
-      email: form.email.value,
-      password: form.password.value,
-      roleId: Number(form.roleId.value)
-    }
-  });
+  const body = {
+    name: form.name.value,
+    username: form.username.value,
+    email: form.email.value,
+    password: form.password.value,
+    roleId: Number(form.roleId.value)
+  };
+  const adminId = form.adminId.value;
+  if (adminId) {
+    await api(`/admin/admins/${adminId}`, { method: 'PUT', auth: 'admin', body });
+  } else {
+    await api('/admin/admins', { method: 'POST', auth: 'admin', body });
+  }
+  state.adminDraft = null;
   await renderAdmins();
 }
 
@@ -805,7 +824,7 @@ async function onClick(event) {
         if (!file) return;
         try {
           const url = await uploadImage(file);
-          card.querySelector('img').src = url;
+          card.querySelector('img').src = siteUrl(url);
           card.querySelector('input').value = url;
           clearAlert();
         } catch (error) {
@@ -900,6 +919,20 @@ async function onClick(event) {
       state.inquiryDraft = null;
       paintInquiries();
     }
+    if (action === 'edit-admin') {
+      state.adminDraft = state.admins.find((item) => item.id === id) || null;
+      await renderAdmins();
+    }
+    if (action === 'cancel-admin') {
+      state.adminDraft = null;
+      await renderAdmins();
+    }
+    if (action === 'delete-admin') {
+      if (!confirm(`確定刪除「${button.dataset.name}」？刪除後無法復原。`)) return;
+      await api(`/admin/admins/${id}`, { method: 'DELETE', auth: 'admin' });
+      if (state.adminDraft && state.adminDraft.id === id) state.adminDraft = null;
+      await renderAdmins();
+    }
     if (action === 'toggle-admin') {
       const active = button.dataset.active === '1';
       const next = !active;
@@ -931,20 +964,20 @@ async function onChange(event) {
 
 async function boot() {
   if (!localStorage.getItem('daren-admin-token')) {
-    location.replace('/admin/login.html');
+    location.replace(siteUrl('/admin/login.html'));
     return;
   }
   try {
     state.me = await api('/admin/me', { auth: 'admin' });
   } catch (error) {
     localStorage.removeItem('daren-admin-token');
-    location.replace('/admin/login.html');
+    location.replace(siteUrl('/admin/login.html'));
     return;
   }
   document.getElementById('admin-who').textContent = `${state.me.name}．${state.me.role.name}`;
   document.getElementById('admin-logout').addEventListener('click', () => {
     localStorage.removeItem('daren-admin-token');
-    location.href = '/admin/login.html';
+    location.href = siteUrl('/admin/login.html');
   });
   const panel = document.getElementById('panel');
   panel.addEventListener('submit', onSubmit);

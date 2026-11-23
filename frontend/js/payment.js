@@ -47,7 +47,7 @@ async function loadPayment() {
   }
   sessionStorage.setItem('daren-order-email', order.buyerEmail);
   const links = ['card', 'atm', 'linepay'].map((item) => `
-    <a class="pay-card ${method === item ? 'is-active' : ''}" href="/payment.html?no=${encodeURIComponent(order.orderNo)}&method=${item}">
+    <a class="pay-card ${method === item ? 'is-active' : ''}" href="${siteUrl(`/payment.html?no=${encodeURIComponent(order.orderNo)}&method=${item}`)}">
       <strong>${METHOD_COPY[item].title}</strong>
       <p class="muted">模擬付款連結</p>
     </a>
@@ -65,7 +65,7 @@ async function loadPayment() {
         <p id="pay-alert" class="alert error" hidden></p>
       </section>
     ` : ''}
-    ${order.status !== 'pending' ? `<p><a href="/order.html?no=${encodeURIComponent(order.orderNo)}">查看訂單</a></p>` : ''}
+    ${order.status !== 'pending' ? `<p><a href="${siteUrl(`/order.html?no=${encodeURIComponent(order.orderNo)}`)}">查看訂單</a></p>` : ''}
   `;
   const button = document.getElementById('confirm-pay');
   if (!button) return;
@@ -78,7 +78,7 @@ async function loadPayment() {
         auth: 'member',
         body: { method, email: order.buyerEmail }
       });
-      location.href = `/order.html?no=${encodeURIComponent(order.orderNo)}&paid=1`;
+      location.href = siteUrl(`/order.html?no=${encodeURIComponent(order.orderNo)}&paid=1`);
     } catch (error) {
       alertBox.hidden = false;
       alertBox.textContent = readableError(error);
