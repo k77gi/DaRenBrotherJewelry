@@ -121,10 +121,12 @@ CREATE TABLE IF NOT EXISTS members (
   password_hash VARCHAR(100) NOT NULL,
   phone VARCHAR(20) NOT NULL DEFAULT '',
   line_id VARCHAR(40) NOT NULL DEFAULT '',
+  facebook_id VARCHAR(40) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
-  UNIQUE KEY uq_members_email (email)
+  UNIQUE KEY uq_members_email (email),
+  UNIQUE KEY uq_members_facebook (facebook_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS orders (

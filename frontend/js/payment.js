@@ -45,6 +45,15 @@ async function loadPayment() {
     box.innerHTML = '<p>請先用訂單編號與電子郵件查詢，再進行付款。</p>';
     return;
   }
+  const shop = await api('/shop');
+  if (shop.payment && shop.payment.online === false) {
+    location.replace(siteUrl(`/remittance.html?no=${encodeURIComponent(order.orderNo)}`));
+    return;
+  }
+  if (order.paymentMethod === 'transfer') {
+    location.replace(siteUrl(`/remittance.html?no=${encodeURIComponent(order.orderNo)}`));
+    return;
+  }
   sessionStorage.setItem('daren-order-email', order.buyerEmail);
   const links = ['card', 'atm', 'linepay'].map((item) => `
     <a class="pay-card ${method === item ? 'is-active' : ''}" href="${siteUrl(`/payment.html?no=${encodeURIComponent(order.orderNo)}&method=${item}`)}">

@@ -36,6 +36,14 @@
 .admin-main { padding: 28px; }
 
 .admin-main h1 { margin-top: 0; }
+.admin-main .order-check,
+.admin-main #order-select-all,
+.admin-main .member-check,
+.admin-main #member-select-all,
+.admin-main .inquiry-check,
+.admin-main #inquiry-select-all { width: auto; padding: 0; }
+.admin-main input.qty { width: 88px; }
+.order-qty-block { border: 1px solid var(--line); margin: 0 0 12px; padding: 8px 12px; }
 
 .captcha-row { display: flex; gap: 12px; align-items: center; margin: 8px 0 12px; }
 

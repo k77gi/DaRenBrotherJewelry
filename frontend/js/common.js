@@ -74,6 +74,7 @@ async function api(path, options = {}) {
   const response = await fetch(siteUrl(`/api${path}`), {
     method: options.method || 'GET',
     headers,
+    cache: 'no-store',
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined
   });
   const data = await response.json().catch(() => ({}));
@@ -103,6 +104,16 @@ function cartItems() {
 
 function cartCount() {
   return cartItems().reduce((sum, item) => sum + item.quantity, 0);
+}
+
+function rememberCheckout() {
+  sessionStorage.setItem('daren-after-login', '/checkout.html');
+}
+
+function goAfterLogin() {
+  const next = sessionStorage.getItem('daren-after-login');
+  sessionStorage.removeItem('daren-after-login');
+  location.href = siteUrl(next === '/checkout.html' ? '/checkout.html' : '/profile.html');
 }
 
 function saveCart(items) {
@@ -187,13 +198,13 @@ function renderOrder(order) {
       ${order.note ? `<p>備註：${esc(order.note)}</p>` : ''}
       ${order.paymentMethod ? `<p>付款方式：${esc(paymentLabel(order.paymentMethod))}</p>` : ''}
       ${order.trackingNo ? `<p>物流單號：${esc(order.trackingNo)}</p>` : ''}
-      ${order.status === 'pending' ? `<p><a href="${siteUrl(`/payment.html?no=${encodeURIComponent(order.orderNo)}`)}">前往付款</a></p>` : ''}
+      ${order.status === 'pending' ? `<p><a href="${siteUrl(order.paymentMethod === 'transfer' ? `/remittance.html?no=${encodeURIComponent(order.orderNo)}` : `/payment.html?no=${encodeURIComponent(order.orderNo)}`)}">${order.paymentMethod === 'transfer' ? '查看匯款資訊' : '前往付款'}</a></p>` : ''}
     </article>
   `;
 }
 
 function paymentLabel(method) {
-  return { card: '信用卡刷卡', atm: 'ATM 虛擬帳號', linepay: 'LINE Pay' }[method] || method;
+  return { card: '信用卡刷卡', atm: 'ATM 虛擬帳號', linepay: 'LINE Pay', transfer: '銀行匯款' }[method] || method;
 }
 
 function mountChrome() {
@@ -201,6 +212,7 @@ function mountChrome() {
   const name = localStorage.getItem('daren-member-name');
   const token = localStorage.getItem('daren-member-token');
   const accountText = token && name ? name : '會員登入/註冊';
+  const accountHref = token && name ? siteUrl('/profile.html') : siteUrl('/member.html');
   const header = document.getElementById('site-header');
   if (header) {
     header.className = 'site-header';
@@ -211,7 +223,7 @@ function mountChrome() {
           <a class="nav-btn" href="${siteUrl('/shop.html')}" data-nav="shop">珠寶小舖</a>
           <a class="nav-btn" href="${siteUrl('/blog.html')}" data-nav="blog">小白教室</a>
           <a class="nav-btn" href="${siteUrl('/contact.html')}" data-nav="contact">與我聯絡</a>
-          <a class="nav-btn" href="${siteUrl('/member.html')}" data-nav="member" id="account-link">${esc(accountText)}</a>
+          <a class="nav-btn" href="${accountHref}" data-nav="member" id="account-link">${esc(accountText)}</a>
           <a class="cart-link" href="${siteUrl('/cart.html')}" data-nav="cart" aria-label="購物車">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 7h15l-1.5 9h-12z"/><path d="M6 7 5 4H2"/><circle cx="9" cy="20" r="1.4"/><circle cx="17" cy="20" r="1.4"/></svg>
             <span id="cart-count">${cartCount()}</span>
@@ -238,7 +250,7 @@ function mountChrome() {
     `;
   }
   document.querySelectorAll('[data-nav]').forEach((link) => {
-    const active = link.dataset.nav === page;
+    const active = link.dataset.nav === page || (link.dataset.nav === 'member' && page === 'profile');
     link.classList.toggle('is-active', active);
     if (active) link.setAttribute('aria-current', 'page');
   });
@@ -265,4 +277,46 @@ function mountChrome() {
   }
 }
 
+function readCookie(name) {
+  const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
+function clearLoginCookie(name) {
+  const path = siteBase() === '' ? '/' : siteBase();
+  document.cookie = `${name}=; Max-Age=0; path=${path}`;
+}
+
+function takeFacebookToken() {
+  const cookieToken = readCookie('daren-member-token');
+  const cookieName = readCookie('daren-member-name');
+  if (cookieToken) {
+    localStorage.setItem('daren-member-token', cookieToken);
+    if (cookieName) localStorage.setItem('daren-member-name', cookieName);
+    clearLoginCookie('daren-member-token');
+    clearLoginCookie('daren-member-name');
+  }
+  if (location.hash.startsWith('#token=')) {
+    const params = new URLSearchParams(location.hash.slice(1));
+    if (params.get('token')) localStorage.setItem('daren-member-token', params.get('token'));
+    if (params.get('name')) localStorage.setItem('daren-member-name', params.get('name'));
+  }
+  if (queryParam('logged_in') === '1') {
+    const name = localStorage.getItem('daren-member-name') || '會員';
+    const main = document.getElementById('main');
+    if (main && !document.getElementById('login-success')) {
+      const note = document.createElement('p');
+      note.id = 'login-success';
+      note.className = 'alert ok wrap';
+      note.textContent = `${name}，登入成功`;
+      main.prepend(note);
+    }
+    const url = new URL(location.href);
+    url.searchParams.delete('logged_in');
+    url.hash = '';
+    history.replaceState(null, '', url.pathname + url.search);
+  }
+}
+
+takeFacebookToken();
 mountChrome();

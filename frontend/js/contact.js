@@ -32,7 +32,7 @@ async function loadContact() {
       form.reset();
       alertBox.hidden = false;
       alertBox.className = 'alert ok';
-      alertBox.textContent = '已收到並儲存你的訊息。這是示範站，不會真的寄出信件。';
+      alertBox.textContent = '已收到並儲存你的訊息，感謝您的留言，將儘快與您聯繫。';
     } catch (error) {
       alertBox.hidden = false;
       alertBox.className = 'alert error';

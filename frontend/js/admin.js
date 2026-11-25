@@ -13,8 +13,14 @@ const ACTION_LABEL = {
   'banner.update': '修改主視覺',
   'banner.delete': '刪除主視覺',
   'inquiry.update': '修改聯絡訊息',
+  'inquiry.delete': '刪除聯絡訊息',
   'order.status': '更新訂單狀態',
   'order.tracking': '更新物流單號',
+  'order.quantity': '修改訂單數量',
+  'order.delete': '刪除訂單',
+  'member.update': '修改會員',
+  'member.delete': '刪除會員',
+  'payment.settings': '更新付款方式',
   'admin.status': '變更管理員狀態',
   'admin.create': '新增管理員',
   'admin.update': '修改管理員',
@@ -34,7 +40,10 @@ const state = {
   inquiryDraft: null,
   inquiryQuery: '',
   admins: [],
-  adminDraft: null
+  adminDraft: null,
+  orders: [],
+  members: [],
+  memberDraft: null
 };
 
 const PANELS = [
@@ -44,6 +53,7 @@ const PANELS = [
   { id: 'categories', label: '分類', allow: () => can('categories.write') },
   { id: 'articles', label: '文章管理', allow: () => can('articles.read') || can('articles.write') },
   { id: 'orders', label: '訂單管理', allow: () => can('orders.read') },
+  { id: 'payment', label: '付款方式', allow: () => can('orders.write') },
   { id: 'members', label: '會員管理', allow: () => can('members.read') },
   { id: 'inquiries', label: '聯絡訊息', allow: () => can('inquiries.read') || can('inquiries.write') },
   { id: 'admins', label: '管理員', allow: () => can('admins.read') },
@@ -94,6 +104,7 @@ async function render() {
     if (id === 'categories') await renderCategories();
     if (id === 'articles') await renderArticles();
     if (id === 'orders') await renderOrders();
+    if (id === 'payment') await renderPayment();
     if (id === 'members') await renderMembers();
     if (id === 'inquiries') await renderInquiries();
     if (id === 'admins') await renderAdmins();
@@ -363,10 +374,46 @@ async function renderArticles() {
   paintArticles();
 }
 
+function selectedOrderIds() {
+  return [...document.querySelectorAll('.order-check:checked')].map((box) => Number(box.value));
+}
+
+function openOrderQtyEditor() {
+  const ids = selectedOrderIds();
+  const editor = document.getElementById('order-editor');
+  if (!ids.length) {
+    setAlert(new Error('請先勾選要修改數量的訂單'));
+    return;
+  }
+  clearAlert();
+  const orders = state.orders.filter((order) => ids.includes(order.id));
+  const blocks = orders.map((order) => `
+    <fieldset class="order-qty-block">
+      <legend>${esc(order.orderNo)}</legend>
+      ${order.items.length ? order.items.map((item) => `
+        <label class="field">${esc(item.productName)}
+          <input class="qty" type="number" min="1" max="99" required data-item="${item.id}" value="${item.quantity}">
+        </label>
+      `).join('') : '<p class="muted">這筆訂單沒有明細。</p>'}
+    </fieldset>
+  `).join('');
+  editor.innerHTML = `
+    <form id="order-qty-form" class="panel">
+      <h2>修改數量</h2>
+      <p class="muted">數量至少 1。已付款、已出貨或已完成的訂單會同步增減庫存。</p>
+      ${blocks}
+      <div class="btn-row">
+        <button class="btn" type="submit">儲存數量</button>
+        <button class="btn secondary" type="button" data-action="cancel-order-qty">取消</button>
+      </div>
+    </form>
+  `;
+}
+
 async function renderOrders() {
-  const orders = await api('/admin/orders', { auth: 'admin' });
+  state.orders = await api('/admin/orders', { auth: 'admin' });
   const writable = can('orders.write');
-  const rows = orders.map((order) => {
+  const rows = state.orders.map((order) => {
     const items = order.items.map((item) => `${esc(item.productName)} × ${item.quantity}`).join('、');
     const status = writable
       ? `<select data-action="order-status" data-id="${order.id}">
@@ -380,6 +427,7 @@ async function renderOrders() {
       : esc(order.trackingNo || '—');
     return `
       <tr>
+        ${writable ? `<td><input class="order-check" type="checkbox" value="${order.id}" aria-label="選取 ${esc(order.orderNo)}"></td>` : ''}
         <td>${esc(order.orderNo)}<br><span class="muted">${esc(order.createdAt)}</span></td>
         <td>${esc(order.buyerName)}<br><span class="muted">${esc(order.buyerPhone)}</span><br>${order.cvsStoreId
           ? `門市代號 ${esc(order.cvsStoreId)}<br>${esc(order.cvsStoreName)}<br>${esc(order.cvsAddress)}`
@@ -394,33 +442,116 @@ async function renderOrders() {
   }).join('');
   document.getElementById('panel').innerHTML = `
     <h1>訂單管理</h1>
-    <p class="muted">付款狀態在模擬付款成功後變成已付款，並扣除庫存。物流單號可另外填寫，不會連到真實物流。</p>
+    <p class="muted">開啟線上金流時，模擬付款成功會變成已付款並扣除庫存。關閉線上金流時，顧客改看匯款資訊；確認入帳後，請把訂單狀態改成已付款。物流單號可另外填寫，不會連到真實物流。勾選訂單後可以修改明細數量，或刪除所選訂單。</p>
+    ${writable ? `
+      <div class="btn-row">
+        <button class="btn secondary" type="button" data-action="edit-order-qty">修改數量</button>
+        <button class="btn danger" type="button" data-action="delete-orders">刪除所選</button>
+      </div>
+      <div id="order-editor"></div>
+    ` : ''}
     <div class="table-wrap">
       <table>
-        <thead><tr><th>訂單</th><th>收件</th><th>合計</th><th>付款狀態</th><th>訂單狀態</th><th>物流單號</th><th>明細</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="7">還沒有訂單。</td></tr>'}</tbody>
+        <thead><tr>
+          ${writable ? '<th><input id="order-select-all" type="checkbox" aria-label="全選訂單"></th>' : ''}
+          <th>訂單</th><th>收件</th><th>合計</th><th>付款狀態</th><th>訂單狀態</th><th>物流單號</th><th>明細</th>
+        </tr></thead>
+        <tbody>${rows || `<tr><td colspan="${writable ? 8 : 7}">還沒有訂單。</td></tr>`}</tbody>
       </table>
     </div>
   `;
 }
 
+async function renderPayment(saved) {
+  const payment = await api('/admin/payment-settings', { auth: 'admin' });
+  document.getElementById('panel').innerHTML = `
+    <h1>付款方式</h1>
+    ${saved ? '<p class="alert ok">付款方式已儲存。</p>' : ''}
+    <p class="muted">開啟線上金流時，結帳會進入信用卡、ATM 虛擬帳號與 LINE Pay 的模擬付款頁。關閉後，宅配與超商取貨都會改為顯示右側的匯款資訊。正式金流串接會接在模擬付款頁之後。</p>
+    <form id="payment-form" class="panel">
+      <label class="check"><input type="checkbox" name="online" ${payment.online ? 'checked' : ''}> 開啟線上金流</label>
+      <label class="field">銀行名稱（可空白）<input name="bankName" maxlength="40" value="${esc(payment.bankName || '')}"></label>
+      <label class="field">收款戶名<input name="payeeName" maxlength="40" value="${esc(payment.payeeName || '')}"></label>
+      <label class="field">收款帳號<input name="payeeAccount" maxlength="30" inputmode="numeric" value="${esc(payment.payeeAccount || '')}" placeholder="僅數字或連字號"></label>
+      <button class="btn" type="submit">儲存付款方式</button>
+    </form>
+  `;
+}
+
+async function savePayment(form) {
+  await api('/admin/payment-settings', {
+    method: 'PUT',
+    auth: 'admin',
+    body: {
+      online: form.online.checked,
+      bankName: form.bankName.value,
+      payeeName: form.payeeName.value,
+      payeeAccount: form.payeeAccount.value
+    }
+  });
+  await renderPayment(true);
+}
+
+function selectedMemberIds() {
+  return [...document.querySelectorAll('.member-check:checked')].map((box) => Number(box.value));
+}
+
+function memberForm() {
+  const draft = state.memberDraft;
+  if (!draft) return '';
+  return `
+    <form id="member-form" class="panel">
+      <h2>編輯會員</h2>
+      <input type="hidden" name="memberId" value="${draft.id}">
+      <div class="form-grid">
+        <label class="field">姓名<input name="name" required maxlength="40" value="${esc(draft.name)}"></label>
+        <label class="field">電子郵件<input name="email" type="email" maxlength="120" value="${esc(draft.email || '')}"></label>
+        <label class="field">電話<input name="phone" maxlength="20" value="${esc(draft.phone || '')}"></label>
+        <label class="field">LINE ID<input name="lineId" maxlength="20" value="${esc(draft.lineId || '')}"></label>
+        <label class="field wide">新密碼（可空白）<input name="password" type="password" minlength="8" maxlength="72" autocomplete="new-password"></label>
+      </div>
+      <p class="muted">密碼留白就不會變更。沒有電子郵件的會員可以保持空白。</p>
+      <div class="btn-row">
+        <button class="btn" type="submit">儲存會員</button>
+        <button class="btn secondary" type="button" data-action="cancel-member">取消</button>
+      </div>
+    </form>
+  `;
+}
+
 async function renderMembers() {
-  const members = await api('/admin/members', { auth: 'admin' });
-  const rows = members.map((member) => `
+  state.members = await api('/admin/members', { auth: 'admin' });
+  if (state.memberDraft) {
+    state.memberDraft = state.members.find((item) => item.id === state.memberDraft.id) || null;
+  }
+  const rows = state.members.map((member) => `
     <tr>
+      <td><input class="member-check" type="checkbox" value="${member.id}" aria-label="選取 ${esc(member.name)}"></td>
       <td>${esc(member.name)}</td>
       <td>${esc(member.email || '—')}</td>
       <td>${esc(member.phone || '—')}</td>
       <td>${esc(member.lineId || '—')}</td>
       <td>${esc(member.createdAt)}</td>
+      <td>
+        <button class="btn secondary" type="button" data-action="edit-member" data-id="${member.id}">編輯</button>
+        <button class="btn danger" type="button" data-action="delete-member" data-id="${member.id}" data-name="${esc(member.name)}">刪除</button>
+      </td>
     </tr>
   `).join('');
   document.getElementById('panel').innerHTML = `
     <h1>會員管理</h1>
+    <p class="muted">可編輯單筆會員。勾選一筆或多筆後，可以一次刪除。刪除後訂單仍保留，只是不再標示這位會員。</p>
+    <div class="btn-row">
+      <button class="btn danger" type="button" data-action="delete-members">刪除所選</button>
+    </div>
+    ${memberForm()}
     <div class="table-wrap">
       <table>
-        <thead><tr><th>姓名</th><th>電子郵件</th><th>電話</th><th>LINE ID</th><th>註冊時間</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="5">還沒有會員。</td></tr>'}</tbody>
+        <thead><tr>
+          <th><input id="member-select-all" type="checkbox" aria-label="全選會員"></th>
+          <th>姓名</th><th>電子郵件</th><th>電話</th><th>LINE ID</th><th>註冊時間</th><th></th>
+        </tr></thead>
+        <tbody>${rows || '<tr><td colspan="7">還沒有會員。</td></tr>'}</tbody>
       </table>
     </div>
   `;
@@ -448,29 +579,39 @@ function inquiryForm() {
   `;
 }
 
+function selectedInquiryIds() {
+  return [...document.querySelectorAll('.inquiry-check:checked')].map((box) => Number(box.value));
+}
+
 function paintInquiries() {
+  const writable = can('inquiries.write');
   const rows = state.inquiries.map((item) => `
     <tr>
+      ${writable ? `<td><input class="inquiry-check" type="checkbox" value="${item.id}" aria-label="選取 ${esc(item.name)}"></td>` : ''}
       <td>${esc(item.createdAt)}</td>
       <td>${esc(item.name)}</td>
       <td>${esc(item.phone)}</td>
       <td>${esc(item.email)}</td>
       <td>${esc(item.message)}</td>
-      <td>${can('inquiries.write') ? `<button class="btn secondary" type="button" data-action="edit-inquiry" data-id="${item.id}">編輯</button>` : ''}</td>
+      <td>${writable ? `<button class="btn secondary" type="button" data-action="edit-inquiry" data-id="${item.id}">編輯</button> <button class="btn danger" type="button" data-action="delete-inquiry" data-id="${item.id}" data-name="${esc(item.name)}">刪除</button>` : ''}</td>
     </tr>
   `).join('');
   document.getElementById('panel').innerHTML = `
     <h1>聯絡訊息</h1>
-    <p class="muted">前台「與我聯絡」送出的內容會存在這裡，最多顯示最近 200 則。</p>
+    <p class="muted">前台「與我聯絡」送出的內容會存在這裡，最多顯示最近 200 則。可編輯單筆，也可以勾選一筆或多筆後刪除。</p>
     <form id="inquiry-search" class="btn-row">
       <label class="field">查詢<input name="q" maxlength="40" value="${esc(state.inquiryQuery)}" placeholder="姓名、電話、Email 或內容"></label>
       <button class="btn" type="submit">查詢</button>
     </form>
+    ${writable ? '<div class="btn-row"><button class="btn danger" type="button" data-action="delete-inquiries">刪除所選</button></div>' : ''}
     ${inquiryForm()}
     <div class="table-wrap">
       <table>
-        <thead><tr><th>時間</th><th>姓名</th><th>電話</th><th>Email</th><th>內容</th><th></th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="6">沒有符合的聯絡訊息。</td></tr>'}</tbody>
+        <thead><tr>
+          ${writable ? '<th><input id="inquiry-select-all" type="checkbox" aria-label="全選聯絡訊息"></th>' : ''}
+          <th>時間</th><th>姓名</th><th>電話</th><th>Email</th><th>內容</th><th></th>
+        </tr></thead>
+        <tbody>${rows || `<tr><td colspan="${writable ? 7 : 6}">沒有符合的聯絡訊息。</td></tr>`}</tbody>
       </table>
     </div>
   `;
@@ -800,6 +941,9 @@ async function onSubmit(event) {
     }
     else if (form.id === 'inquiry-form') await saveInquiry(form);
     else if (form.id === 'admin-form') await saveAdmin(form);
+    else if (form.id === 'payment-form') await savePayment(form);
+    else if (form.id === 'order-qty-form') await saveOrderQuantities(form);
+    else if (form.id === 'member-form') await saveMember(form);
     else if (form.classList.contains('role-form')) await saveRole(form);
     clearAlert();
   } catch (error) {
@@ -902,6 +1046,49 @@ async function onClick(event) {
       state.articleDraft = null;
       await renderArticles();
     }
+    if (action === 'edit-member') {
+      state.memberDraft = state.members.find((item) => item.id === id) || null;
+      await renderMembers();
+    }
+    if (action === 'cancel-member') {
+      state.memberDraft = null;
+      await renderMembers();
+    }
+    if (action === 'delete-member') {
+      if (!confirm(`確定刪除「${button.dataset.name}」？刪除後無法復原。`)) return;
+      await api('/admin/members/delete', { method: 'POST', auth: 'admin', body: { ids: [id] } });
+      if (state.memberDraft && state.memberDraft.id === id) state.memberDraft = null;
+      clearAlert();
+      await renderMembers();
+    }
+    if (action === 'delete-members') {
+      const ids = selectedMemberIds();
+      if (!ids.length) {
+        setAlert(new Error('請先勾選要刪除的會員'));
+        return;
+      }
+      if (!confirm(`確定刪除勾選的 ${ids.length} 位會員？刪除後無法復原。`)) return;
+      await api('/admin/members/delete', { method: 'POST', auth: 'admin', body: { ids } });
+      state.memberDraft = null;
+      clearAlert();
+      await renderMembers();
+    }
+    if (action === 'edit-order-qty') openOrderQtyEditor();
+    if (action === 'cancel-order-qty') {
+      const editor = document.getElementById('order-editor');
+      if (editor) editor.innerHTML = '';
+    }
+    if (action === 'delete-orders') {
+      const ids = selectedOrderIds();
+      if (!ids.length) {
+        setAlert(new Error('請先勾選要刪除的訂單'));
+        return;
+      }
+      if (!confirm(`確定刪除勾選的 ${ids.length} 筆訂單？刪除後無法復原。已付款的訂單會把數量加回庫存。`)) return;
+      await api('/admin/orders/delete', { method: 'POST', auth: 'admin', body: { ids } });
+      clearAlert();
+      await renderOrders();
+    }
     if (action === 'save-tracking') {
       const input = document.querySelector(`[data-tracking="${id}"]`);
       await api(`/admin/orders/${id}/tracking`, {
@@ -918,6 +1105,25 @@ async function onClick(event) {
     if (action === 'cancel-inquiry') {
       state.inquiryDraft = null;
       paintInquiries();
+    }
+    if (action === 'delete-inquiry') {
+      if (!confirm(`確定刪除「${button.dataset.name}」的聯絡訊息？刪除後無法復原。`)) return;
+      await api('/admin/inquiries/delete', { method: 'POST', auth: 'admin', body: { ids: [id] } });
+      if (state.inquiryDraft && state.inquiryDraft.id === id) state.inquiryDraft = null;
+      clearAlert();
+      await renderInquiries();
+    }
+    if (action === 'delete-inquiries') {
+      const ids = selectedInquiryIds();
+      if (!ids.length) {
+        setAlert(new Error('請先勾選要刪除的聯絡訊息'));
+        return;
+      }
+      if (!confirm(`確定刪除勾選的 ${ids.length} 則聯絡訊息？刪除後無法復原。`)) return;
+      await api('/admin/inquiries/delete', { method: 'POST', auth: 'admin', body: { ids } });
+      state.inquiryDraft = null;
+      clearAlert();
+      await renderInquiries();
     }
     if (action === 'edit-admin') {
       state.adminDraft = state.admins.find((item) => item.id === id) || null;
@@ -945,8 +1151,63 @@ async function onClick(event) {
   }
 }
 
+async function saveMember(form) {
+  await api(`/admin/members/${form.memberId.value}`, {
+    method: 'PUT',
+    auth: 'admin',
+    body: {
+      name: form.name.value,
+      email: form.email.value,
+      phone: form.phone.value,
+      lineId: form.lineId.value,
+      password: form.password.value
+    }
+  });
+  state.memberDraft = null;
+  await renderMembers();
+}
+
+async function saveOrderQuantities(form) {
+  const items = [...form.querySelectorAll('[data-item]')].map((input) => ({
+    id: Number(input.dataset.item),
+    quantity: Number(input.value)
+  }));
+  await api('/admin/orders/quantities', { method: 'PUT', auth: 'admin', body: { items } });
+  await renderOrders();
+}
+
 async function onChange(event) {
   const select = event.target;
+  if (select.id === 'order-select-all') {
+    document.querySelectorAll('.order-check').forEach((box) => { box.checked = select.checked; });
+    return;
+  }
+  if (select.id === 'member-select-all') {
+    document.querySelectorAll('.member-check').forEach((box) => { box.checked = select.checked; });
+    return;
+  }
+  if (select.id === 'inquiry-select-all') {
+    document.querySelectorAll('.inquiry-check').forEach((box) => { box.checked = select.checked; });
+    return;
+  }
+  if (select.classList.contains('member-check')) {
+    const boxes = [...document.querySelectorAll('.member-check')];
+    const all = document.getElementById('member-select-all');
+    if (all) all.checked = boxes.length > 0 && boxes.every((box) => box.checked);
+    return;
+  }
+  if (select.classList.contains('inquiry-check')) {
+    const boxes = [...document.querySelectorAll('.inquiry-check')];
+    const all = document.getElementById('inquiry-select-all');
+    if (all) all.checked = boxes.length > 0 && boxes.every((box) => box.checked);
+    return;
+  }
+  if (select.classList.contains('order-check')) {
+    const boxes = [...document.querySelectorAll('.order-check')];
+    const all = document.getElementById('order-select-all');
+    if (all) all.checked = boxes.length > 0 && boxes.every((box) => box.checked);
+    return;
+  }
   if (select.dataset.action !== 'order-status') return;
   select.disabled = true;
   try {

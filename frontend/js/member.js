@@ -1,183 +1,70 @@
-function loginTicket() {
-  return new URLSearchParams(location.search).get('login') || '';
-}
-
-async function saveMember(result) {
+function saveMember(result) {
   localStorage.setItem('daren-member-token', result.token);
   localStorage.setItem('daren-member-name', result.member.name);
-  const ticket = loginTicket();
-  if (ticket) {
-    try {
-      await api('/members/qr/confirm', { method: 'POST', auth: 'member', body: { ticket } });
-    } catch (error) {
-      location.href = siteUrl(`/member.html?login=${encodeURIComponent(ticket)}`);
-      return;
-    }
+  goAfterLogin();
+}
+
+function bindEnterForm() {
+  const form = document.getElementById('enter-form');
+  const alertBox = document.getElementById('login-alert');
+  const facebookError = queryParam('facebook');
+  if (facebookError) {
+    alertBox.hidden = false;
+    alertBox.textContent = facebookError;
   }
-  location.href = siteUrl('/member.html');
-}
-
-function startQrLogin() {
-  const image = document.getElementById('qr-image');
-  const status = document.getElementById('qr-status');
-  const refresh = document.getElementById('qr-refresh');
-  let timer = 0;
-  const begin = async () => {
-    clearInterval(timer);
-    refresh.hidden = true;
-    status.textContent = 'QR Code 產生中…';
-    image.innerHTML = '';
-    try {
-      const started = await api('/members/qr/start', { method: 'POST', body: {} });
-      if (!String(started.svg || '').trim().startsWith('<svg')) throw new Error('QR Code 產生失敗');
-      image.innerHTML = started.svg;
-      status.textContent = '等待手機確認，五分鐘內有效。';
-      timer = setInterval(async () => {
-        try {
-          const result = await api('/members/qr/poll', {
-            method: 'POST',
-            body: { ticket: started.ticket, secret: started.secret }
-          });
-          if (result.status === 'pending') return;
-          clearInterval(timer);
-          if (result.status === 'confirmed') {
-            saveMember(result);
-            return;
-          }
-          status.textContent = 'QR Code 已失效。';
-          refresh.hidden = false;
-        } catch (error) {
-          clearInterval(timer);
-          status.textContent = readableError(error);
-          refresh.hidden = false;
-        }
-      }, 2000);
-    } catch (error) {
-      status.textContent = readableError(error);
-      refresh.hidden = false;
-    }
+  const emailField = document.getElementById('email-field');
+  const phoneField = document.getElementById('phone-field');
+  const lineField = document.getElementById('line-field');
+  const phoneButton = document.getElementById('use-phone');
+  const lineButton = document.getElementById('use-line');
+  const submitButton = document.getElementById('submit-enter');
+  const setMethod = (method) => {
+    form.method.value = method;
+    emailField.hidden = method !== 'email';
+    phoneField.hidden = method !== 'phone';
+    lineField.hidden = method !== 'line';
+    emailField.querySelector('input').required = method === 'email';
+    phoneField.querySelector('input').required = method === 'phone';
+    lineField.querySelector('input').required = method === 'line';
+    if (method !== 'email') emailField.querySelector('input').value = '';
+    if (method !== 'phone') phoneField.querySelector('input').value = '';
+    if (method !== 'line') lineField.querySelector('input').value = '';
+    phoneButton.textContent = method === 'phone' ? '改用電子郵件登入或註冊' : '以電話號碼登入或註冊';
+    phoneButton.classList.toggle('is-active', method === 'phone');
+    lineButton.textContent = method === 'line' ? '改用電子郵件登入或註冊' : '使用 LINE ID 登入或註冊';
+    submitButton.textContent = '登入或註冊';
   };
-  refresh.addEventListener('click', begin);
-  begin();
-}
-
-function bindGuestForms() {
-  const loginAlert = document.getElementById('login-alert');
-  const registerAlert = document.getElementById('register-alert');
-  document.getElementById('login-form').addEventListener('submit', async (event) => {
-    event.preventDefault();
-    loginAlert.hidden = true;
-    const form = event.target;
-    try {
-      const result = await api('/members/login', {
-        method: 'POST',
-        body: { account: form.account.value, password: form.password.value }
-      });
-      saveMember(result);
-    } catch (error) {
-      loginAlert.hidden = false;
-      loginAlert.textContent = readableError(error);
-    }
+  phoneButton.addEventListener('click', () => {
+    setMethod(form.method.value === 'phone' ? 'email' : 'phone');
   });
-  const registerForm = document.getElementById('register-form');
-  const syncMethod = () => {
-    const method = registerForm.method.value;
-    registerForm.querySelectorAll('[data-method]').forEach((field) => {
-      const active = field.dataset.method === method;
-      field.hidden = !active;
-      const input = field.querySelector('input');
-      input.required = active;
-      if (!active) input.value = '';
-    });
-  };
-  registerForm.addEventListener('change', syncMethod);
-  syncMethod();
-  registerForm.addEventListener('submit', async (event) => {
+  lineButton.addEventListener('click', () => {
+    setMethod(form.method.value === 'line' ? 'email' : 'line');
+  });
+  form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    registerAlert.hidden = true;
-    const form = event.target;
+    alertBox.hidden = true;
+    const method = form.method.value;
     try {
-      const result = await api('/members/register', {
+      const account = method === 'phone' ? form.phone.value : (method === 'line' ? form.lineId.value : form.email.value);
+      const result = await api('/members/enter', {
         method: 'POST',
         body: {
-          method: form.method.value,
+          method,
           name: form.name.value,
-          email: form.email.value,
-          phone: form.phone.value,
-          lineId: form.lineId.value,
+          account,
           password: form.password.value
         }
       });
       saveMember(result);
     } catch (error) {
-      registerAlert.hidden = false;
-      registerAlert.textContent = readableError(error);
+      alertBox.hidden = false;
+      alertBox.textContent = readableError(error);
     }
   });
 }
 
-function bindQrApproval() {
-  const ticket = loginTicket();
-  const box = document.getElementById('qr-approve');
-  if (!ticket) return;
-  box.hidden = false;
-  document.getElementById('qr-approve-btn').addEventListener('click', async () => {
-    const alert = document.getElementById('qr-approve-alert');
-    alert.hidden = true;
-    try {
-      await api('/members/qr/confirm', { method: 'POST', auth: 'member', body: { ticket } });
-      location.href = siteUrl('/member.html');
-    } catch (error) {
-      alert.hidden = false;
-      alert.textContent = readableError(error);
-    }
-  });
+if (localStorage.getItem('daren-member-token')) {
+  location.replace(siteUrl('/profile.html'));
+} else {
+  bindEnterForm();
 }
-
-async function loadMember() {
-  const token = localStorage.getItem('daren-member-token');
-  if (!token) {
-    if (loginTicket()) {
-      document.getElementById('qr-login').hidden = true;
-      document.getElementById('phone-login-note').hidden = false;
-    } else {
-      startQrLogin();
-    }
-    bindGuestForms();
-    return;
-  }
-  try {
-    const member = await api('/members/me', { auth: 'member' });
-    const orders = await api('/members/orders', { auth: 'member' });
-    localStorage.setItem('daren-member-name', member.name);
-    mountChrome();
-    document.getElementById('guest-panel').hidden = true;
-    const panel = document.getElementById('member-panel');
-    panel.hidden = false;
-    document.getElementById('member-title').textContent = `${member.name} 的訂單`;
-    const contact = [
-      member.email,
-      member.phone,
-      member.lineId ? `LINE ${member.lineId}` : ''
-    ].filter(Boolean).join('　');
-    document.getElementById('member-meta').textContent = contact;
-    document.getElementById('member-orders').innerHTML = orders.length
-      ? orders.map(renderOrder).join('')
-      : '<p>還沒有訂單。</p>';
-    bindQrApproval();
-    document.getElementById('logout').addEventListener('click', () => {
-      localStorage.removeItem('daren-member-token');
-      localStorage.removeItem('daren-member-name');
-      location.reload();
-    });
-  } catch (error) {
-    localStorage.removeItem('daren-member-token');
-    localStorage.removeItem('daren-member-name');
-    bindGuestForms();
-    const loginAlert = document.getElementById('login-alert');
-    loginAlert.hidden = false;
-    loginAlert.textContent = readableError(error);
-  }
-}
-
-loadMember();

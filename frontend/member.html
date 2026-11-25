@@ -3,65 +3,34 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>會員｜大仁哥的珠寶小舖</title>
+  <title>會員登入｜大仁哥的珠寶小舖</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/style.css?v=20261125f">
 </head>
 <body data-page="member">
   <a class="skip" href="#main">跳到主要內容</a>
   <header id="site-header"></header>
   <main class="wrap" id="main">
-    <h1>會員</h1>
-    <div id="guest-panel" class="split">
-      <form id="login-form" class="panel">
-        <h2>登入</h2>
-        <div id="login-alert" class="alert error" hidden></div>
-        <div id="qr-login" class="qr-box">
-          <p>用手機相機掃描 QR Code。手機確認後，這台電腦會登入。</p>
-          <div id="qr-image" role="img" aria-label="登入 QR Code"></div>
-          <p id="qr-status" class="muted">QR Code 產生中…</p>
-          <button class="btn secondary" id="qr-refresh" type="button" hidden>重新產生</button>
-        </div>
-        <p id="phone-login-note" class="muted" hidden>這是手機上的登入確認。請用帳號登入或註冊，完成後電腦就會登入。</p>
-        <label class="field">帳號<input name="account" required autocomplete="username" placeholder="電子郵件、電話或 LINE ID"></label>
-        <label class="field">密碼<input name="password" type="password" required autocomplete="current-password"></label>
-        <button class="btn" type="submit">登入</button>
-      </form>
-      <form id="register-form" class="panel">
-        <h2>註冊</h2>
-        <div id="register-alert" class="alert error" hidden></div>
-        <label class="field">姓名<input name="name" required maxlength="40" autocomplete="name"></label>
-        <fieldset class="choice-row">
-          <legend>註冊方式</legend>
-          <label class="option"><input type="radio" name="method" value="email" checked> 電子郵件</label>
-          <label class="option"><input type="radio" name="method" value="phone"> 電話號碼</label>
-          <label class="option"><input type="radio" name="method" value="line"> LINE ID</label>
-        </fieldset>
-        <label class="field" data-method="email">電子郵件<input name="email" type="email" required autocomplete="email"></label>
-        <label class="field" data-method="phone" hidden>電話號碼<input name="phone" maxlength="20" autocomplete="tel"></label>
-        <label class="field" data-method="line" hidden>LINE ID<input name="lineId" maxlength="20" autocomplete="username"></label>
-        <p class="muted">LINE 登入使用你的 LINE ID，不會跳轉到 LINE App。</p>
-        <label class="field">密碼<input name="password" type="password" required minlength="8" maxlength="72" autocomplete="new-password"></label>
-        <button class="btn" type="submit">建立帳號</button>
-      </form>
-    </div>
-    <section id="member-panel" hidden>
-      <div id="qr-approve" class="panel" hidden>
-        <h2>允許電腦登入</h2>
-        <p>手機已登入。按下按鈕後，掃了 QR Code 的電腦會登入同一個會員。</p>
-        <div id="qr-approve-alert" class="alert error" hidden></div>
-        <button class="btn" id="qr-approve-btn" type="button">允許這台電腦登入</button>
-      </div>
-      <div class="section-head">
-        <h2 id="member-title">歷史訂單</h2>
-        <button class="btn secondary" id="logout" type="button">登出</button>
-      </div>
-      <p id="member-meta" class="muted"></p>
-      <div id="member-orders"></div>
-    </section>
+    <form id="enter-form" class="login-card panel">
+      <h1>會員登入</h1>
+      <p class="muted">可使用 Facebook、電話、電子郵件或 LINE ID 註冊或登入，第一次輸入會自動建立會員。</p>
+      <div id="login-alert" class="alert error" hidden></div>
+      <a class="btn btn-block facebook" href="api/members/facebook/start">使用 Facebook 加入或登入</a>
+      <button class="btn btn-block phone" id="use-phone" type="button">以電話號碼登入或註冊</button>
+      <button class="btn btn-block line" id="use-line" type="button">使用 LINE ID 登入或註冊</button>
+      <p class="login-or">或</p>
+      <label class="field">姓名（可空白，僅第一次建立會員時使用）<input name="name" maxlength="40" autocomplete="name"></label>
+      <label class="field" id="email-field">電子郵件<input name="email" type="email" required autocomplete="email" placeholder="請輸入電子郵件"></label>
+      <label class="field" id="phone-field" hidden>電話號碼<input name="phone" maxlength="20" autocomplete="tel" placeholder="請輸入電話號碼"></label>
+      <label class="field" id="line-field" hidden>LINE ID<input name="lineId" maxlength="20" autocomplete="username" placeholder="請輸入 LINE ID"></label>
+      <input type="hidden" name="method" value="email">
+      <label class="field">密碼<input name="password" type="password" required minlength="8" maxlength="72" autocomplete="current-password" placeholder="8 個以上字元"></label>
+      <label class="check" style="font-size: 0.85em;"><input name="agree" type="checkbox" required> 我已閱讀並同意<a href="terms.html">服務條款</a>及<a href="privacy.html">隱私政策</a>、<a href="data-deletion.html">用戶資料刪除</a></label>
+      <button class="btn btn-block" id="submit-enter" type="submit">登入或註冊</button>
+    </form>
   </main>
   <footer id="site-footer"></footer>
-  <script src="js/common.js"></script>
-  <script src="js/member.js"></script>
+  <script src="js/common.js?v=20261125h"></script>
+  <script src="js/member.js?v=20261125h"></script>
 </body>
 </html>

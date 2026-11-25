@@ -54,8 +54,17 @@ async function loadCart() {
       <p>運費 ${money(shipping)}</p>
       <p>合計 <strong>${money(subtotal + shipping)}</strong></p>
       <p class="muted">滿 ${money(shop.freeShippingThreshold)} 免運。庫存不足的品項需先調整數量。</p>
-      ${blocked ? '<p class="alert error">有商品超過庫存或已下架，請先調整。</p>' : `<a class="btn" href="${siteUrl('/checkout.html')}">前往結帳</a>`}
+      ${blocked ? '<p class="alert error">有商品超過庫存或已下架，請先調整。</p>' : `<a class="btn" id="go-checkout" href="${siteUrl('/checkout.html')}">前往結帳</a>`}
     `;
+    const go = document.getElementById('go-checkout');
+    if (go) {
+      go.addEventListener('click', (event) => {
+        if (localStorage.getItem('daren-member-token')) return;
+        event.preventDefault();
+        rememberCheckout();
+        location.href = siteUrl('/member.html');
+      });
+    }
 
     const change = (productId, color, quantity) => {
       const product = products.find((row) => row.id === productId);

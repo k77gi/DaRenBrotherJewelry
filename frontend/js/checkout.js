@@ -54,10 +54,34 @@ async function loadStore(form, token) {
   showStore(store);
 }
 
+function paymentIsOnline(shop) {
+  if (!shop || !shop.payment || !Object.prototype.hasOwnProperty.call(shop.payment, 'online')) return true;
+  const value = shop.payment.online;
+  return value !== false && value !== 0 && value !== '0' && value !== 'false';
+}
+
+function applyPaymentMode(online) {
+  const button = document.getElementById('checkout-submit');
+  const intro = document.getElementById('checkout-intro');
+  if (!button) return;
+  button.textContent = online ? '送出並前往付款' : '送出並前往取得匯款資訊';
+  if (intro) {
+    intro.textContent = online
+      ? '填寫收件資料後，會前往模擬付款。'
+      : '填寫收件資料後，會前往匯款資訊。宅配與超商取貨都使用這個流程。';
+  }
+}
+
 async function loadCheckout() {
+  if (!localStorage.getItem('daren-member-token')) {
+    rememberCheckout();
+    location.replace(siteUrl('/member.html'));
+    return;
+  }
   const form = document.getElementById('checkout-form');
   const summary = document.getElementById('checkout-summary');
   const alertBox = document.getElementById('checkout-alert');
+  let onlinePayment = true;
   const items = cartItems();
   if (items.length === 0) {
     summary.innerHTML = `<p>購物車是空的。<a href="${siteUrl('/shop.html')}">去珠寶小舖</a></p>`;
@@ -67,6 +91,8 @@ async function loadCheckout() {
 
   try {
     const [products, shop] = await Promise.all([api('/products'), api('/shop')]);
+    onlinePayment = paymentIsOnline(shop);
+    applyPaymentMode(onlinePayment);
     let subtotal = 0;
     let blocked = false;
     const lines = items.map((item) => {
@@ -87,7 +113,7 @@ async function loadCheckout() {
       <p>商品 ${money(subtotal)}</p>
       <p>運費 ${money(shipping)}</p>
       <p>合計 <strong>${money(subtotal + shipping)}</strong></p>
-      <p class="muted">送出後會建立待處理訂單，並前往模擬付款。付款成功才扣庫存。</p>
+      <p class="muted">${onlinePayment ? '送出後會建立待處理訂單，並前往模擬付款。付款成功才扣庫存。' : '送出後會建立待處理訂單，並顯示匯款帳戶。確認入帳後才會改為已付款並扣除庫存。'}</p>
       ${blocked ? '<p class="alert error">數量超過庫存，請回購物車調整。</p>' : ''}
     `;
     if (blocked) form.hidden = true;
@@ -115,6 +141,7 @@ async function loadCheckout() {
       document.getElementById('cvs-result').hidden = true;
     }
     syncDelivery(form);
+    applyPaymentMode(onlinePayment);
   });
   document.getElementById('open-map').addEventListener('click', async () => {
     alertBox.hidden = true;
@@ -164,6 +191,9 @@ async function loadCheckout() {
       if (form.delivery.value === 'cvs' && !form.cvsToken.value) {
         throw new Error('請先用電子地圖選擇超商');
       }
+      const shopNow = await api('/shop');
+      onlinePayment = paymentIsOnline(shopNow);
+      applyPaymentMode(onlinePayment);
       const order = await api('/orders', {
         method: 'POST',
         auth: 'member',
@@ -180,7 +210,8 @@ async function loadCheckout() {
       });
       saveCart([]);
       sessionStorage.setItem('daren-order-email', order.buyerEmail);
-      location.href = siteUrl(`/payment.html?no=${encodeURIComponent(order.orderNo)}`);
+      const next = !onlinePayment || order.paymentMethod === 'transfer' ? '/remittance.html' : '/payment.html';
+      location.href = siteUrl(`${next}?no=${encodeURIComponent(order.orderNo)}`);
     } catch (error) {
       alertBox.hidden = false;
       alertBox.textContent = readableError(error);

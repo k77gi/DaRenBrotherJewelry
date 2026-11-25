@@ -13,11 +13,12 @@ function dispatch($method, $path) {
         array('POST', '#^/inquiries$#', 'route_inquiry_create'),
         array('POST', '#^/members/register$#', 'route_member_register'),
         array('POST', '#^/members/login$#', 'route_member_login'),
+        array('POST', '#^/members/enter$#', 'route_member_enter'),
         array('GET', '#^/members/me$#', 'route_member_me'),
         array('GET', '#^/members/orders$#', 'route_member_orders'),
-        array('POST', '#^/members/qr/start$#', 'route_qr_start'),
-        array('POST', '#^/members/qr/poll$#', 'route_qr_poll'),
-        array('POST', '#^/members/qr/confirm$#', 'route_qr_confirm'),
+        array('GET', '#^/members/purchases$#', 'route_member_purchases'),
+        array('GET', '#^/members/facebook/start$#', 'route_facebook_start'),
+        array('GET', '#^/members/facebook/callback$#', 'route_facebook_callback'),
         array('POST', '#^/orders$#', 'route_order_create'),
         array('POST', '#^/orders/lookup$#', 'route_order_lookup'),
         array('POST', '#^/orders/([^/]+)/pay$#', 'route_order_pay'),
@@ -38,10 +39,16 @@ function dispatch($method, $path) {
         array('POST', '#^/admin/articles$#', 'route_admin_article_create'),
         array('PUT', '#^/admin/articles/(\d+)$#', 'route_admin_article_update'),
         array('DELETE', '#^/admin/articles/(\d+)$#', 'route_admin_article_delete'),
+        array('GET', '#^/admin/payment-settings$#', 'route_admin_payment_get'),
+        array('PUT', '#^/admin/payment-settings$#', 'route_admin_payment_save'),
         array('GET', '#^/admin/orders$#', 'route_admin_orders'),
+        array('PUT', '#^/admin/orders/quantities$#', 'route_admin_order_quantities'),
+        array('POST', '#^/admin/orders/delete$#', 'route_admin_orders_delete'),
         array('PATCH', '#^/admin/orders/(\d+)/tracking$#', 'route_admin_tracking'),
         array('PATCH', '#^/admin/orders/(\d+)/status$#', 'route_admin_status'),
         array('GET', '#^/admin/members$#', 'route_admin_members'),
+        array('PUT', '#^/admin/members/(\d+)$#', 'route_admin_member_update'),
+        array('POST', '#^/admin/members/delete$#', 'route_admin_members_delete'),
         array('POST', '#^/admin/uploads$#', 'route_admin_upload'),
         array('DELETE', '#^/admin/uploads$#', 'route_admin_upload_delete'),
         array('GET', '#^/admin/roles$#', 'route_admin_roles'),
@@ -58,6 +65,7 @@ function dispatch($method, $path) {
         array('DELETE', '#^/admin/banners/(\d+)$#', 'route_admin_banner_delete'),
         array('GET', '#^/admin/inquiries$#', 'route_admin_inquiries'),
         array('PUT', '#^/admin/inquiries/(\d+)$#', 'route_admin_inquiry_update'),
+        array('POST', '#^/admin/inquiries/delete$#', 'route_admin_inquiries_delete'),
         array('GET', '#^/admin/audit-logs$#', 'route_admin_audit')
     );
     foreach ($routes as $route) {
@@ -128,6 +136,20 @@ function allow_all($admin, $codes) {
 
 function route_health() { json_out(array('ok' => true)); }
 
+function payment_settings() {
+    $defaults = array('online' => true, 'bankName' => '', 'payeeName' => '', 'payeeAccount' => '');
+    $row = db_one('SELECT `value` FROM schema_meta WHERE meta_key = ?', array('payment_settings'));
+    if (!$row || $row['value'] === '') return $defaults;
+    $data = json_decode($row['value'], true);
+    if (!is_array($data)) return $defaults;
+    return array(
+        'online' => !isset($data['online']) || !empty($data['online']),
+        'bankName' => isset($data['bankName']) ? (string) $data['bankName'] : '',
+        'payeeName' => isset($data['payeeName']) ? (string) $data['payeeName'] : '',
+        'payeeAccount' => isset($data['payeeAccount']) ? (string) $data['payeeAccount'] : ''
+    );
+}
+
 function route_shop() {
     $c = config();
     json_out(array(
@@ -136,7 +158,8 @@ function route_shop() {
         'shippingFee' => (int) $c['shipping_fee'],
         'phone' => $c['phone'],
         'address' => $c['address'],
-        'hours' => $c['hours']
+        'hours' => $c['hours'],
+        'payment' => payment_settings()
     ));
 }
 
@@ -231,7 +254,7 @@ function find_member_account($account) {
     $text = trim((string) $account);
     $phone = preg_replace('/[\s()-]/', '', $text);
     return db_one(
-        'SELECT id, name, email, phone, line_id, password_hash, created_at FROM members
+        'SELECT id, name, email, phone, line_id, facebook_id, password_hash, created_at FROM members
          WHERE LOWER(email) = LOWER(?) OR (phone <> \'\' AND phone = ?) OR (line_id <> \'\' AND LOWER(line_id) = LOWER(?))',
         array($text, $phone, $text)
     );
@@ -268,6 +291,85 @@ function route_member_register() {
     json_out(array('token' => jwt_sign(array('typ' => 'member', 'id' => (int) $member['id'])), 'member' => map_member($member)), 201);
 }
 
+function member_token_out($member, $created) {
+    json_out(array(
+        'token' => jwt_sign(array('typ' => 'member', 'id' => (int) $member['id'])),
+        'member' => map_member($member),
+        'created' => $created
+    ), $created ? 201 : 200);
+}
+
+function route_member_enter() {
+    $body = request_body();
+    $method = isset($body['method']) ? (string) $body['method'] : 'email';
+    if (!in_array($method, array('email', 'phone', 'line'), true)) fail(400, '請選擇電子郵件、電話或 LINE ID');
+    $password = read_password(isset($body['password']) ? $body['password'] : '');
+    $name = optional_text(isset($body['name']) ? $body['name'] : '', 40, '姓名');
+    if ($method === 'email') {
+        $email = required_email(isset($body['account']) ? $body['account'] : '');
+        $member = db_one(
+            'SELECT id, name, email, phone, line_id, facebook_id, password_hash, created_at FROM members WHERE LOWER(email) = LOWER(?)',
+            array($email)
+        );
+        if ($member) {
+            if (!verify_pw($password, $member['password_hash'])) {
+                if (!empty($member['facebook_id'])) fail(401, '這個帳號是用 Facebook 建立的，請按「使用 Facebook 加入或登入」');
+                fail(401, '密碼不正確');
+            }
+            member_token_out($member, false);
+        }
+        if ($name === '') $name = strstr($email, '@', true);
+        if ($name === false || $name === '') $name = '會員';
+        $name = mb_substr($name, 0, 40, 'UTF-8');
+        $info = db_run(
+            'INSERT INTO members (name, email, password_hash, phone, line_id) VALUES (?, ?, ?, ?, ?)',
+            array($name, $email, hash_pw($password), '', '')
+        );
+    } elseif ($method === 'phone') {
+        $phone = canonical_phone(isset($body['account']) ? $body['account'] : '', true);
+        $member = db_one(
+            'SELECT id, name, email, phone, line_id, facebook_id, password_hash, created_at FROM members WHERE phone = ?',
+            array($phone)
+        );
+        if ($member) {
+            if (!verify_pw($password, $member['password_hash'])) {
+                if (!empty($member['facebook_id'])) fail(401, '這個帳號是用 Facebook 建立的，請按「使用 Facebook 加入或登入」');
+                fail(401, '密碼不正確');
+            }
+            member_token_out($member, false);
+        }
+        if ($name === '') $name = $phone;
+        $name = mb_substr($name, 0, 40, 'UTF-8');
+        $email = 'm' . time() . mt_rand(0, 999) . '@members.local';
+        $info = db_run(
+            'INSERT INTO members (name, email, password_hash, phone, line_id) VALUES (?, ?, ?, ?, ?)',
+            array($name, $email, hash_pw($password), $phone, '')
+        );
+    } else {
+        $line = line_id(isset($body['account']) ? $body['account'] : '');
+        $member = db_one(
+            'SELECT id, name, email, phone, line_id, facebook_id, password_hash, created_at FROM members WHERE LOWER(line_id) = LOWER(?)',
+            array($line)
+        );
+        if ($member) {
+            if (!verify_pw($password, $member['password_hash'])) {
+                if (!empty($member['facebook_id'])) fail(401, '這個帳號是用 Facebook 建立的，請按「使用 Facebook 加入或登入」');
+                fail(401, '密碼不正確');
+            }
+            member_token_out($member, false);
+        }
+        if ($name === '') $name = $line;
+        $name = mb_substr($name, 0, 40, 'UTF-8');
+        $email = 'm' . time() . mt_rand(0, 999) . '@members.local';
+        $info = db_run(
+            'INSERT INTO members (name, email, password_hash, phone, line_id) VALUES (?, ?, ?, ?, ?)',
+            array($name, $email, hash_pw($password), '', $line)
+        );
+    }
+    $created = db_one('SELECT id, name, email, phone, line_id, created_at FROM members WHERE id = ?', array($info['id']));
+    member_token_out($created, true);
+}
+
 function route_member_login() {
     $body = request_body();
     $account = trim((string) (isset($body['account']) ? $body['account'] : (isset($body['email']) ? $body['email'] : '')));
@@ -275,7 +377,10 @@ function route_member_login() {
     $password = isset($body['password']) ? (string) $body['password'] : '';
     $member = find_member_account($account);
     $hash = $member ? $member['password_hash'] : hash_pw('dummy-password');
-    if (!$member || !verify_pw($password, $hash)) fail(401, '帳號或密碼不正確');
+    if (!$member || !verify_pw($password, $hash)) {
+        if ($member && !empty($member['facebook_id'])) fail(401, '這個帳號是用 Facebook 建立的，請按「使用 Facebook 加入或登入」');
+        fail(401, '帳號或密碼不正確');
+    }
     json_out(array('token' => jwt_sign(array('typ' => 'member', 'id' => (int) $member['id'])), 'member' => map_member($member)));
 }
 
@@ -291,76 +396,213 @@ function route_member_orders() {
     json_out(list_orders($auth['id']));
 }
 
-function ticket_row($ticket) {
-    return db_one(
-        "SELECT id, secret_hash, member_id, status, CASE WHEN expires_at <= NOW() THEN 1 ELSE 0 END AS expired FROM login_tickets WHERE id = ?",
-        array($ticket)
+function route_member_purchases() {
+    $auth = current_member();
+    $rows = db_all(
+        "SELECT oi.product_id, oi.product_name, oi.quantity, o.created_at
+         FROM order_items oi
+         JOIN orders o ON o.id = oi.order_id
+         WHERE o.member_id = ? AND o.status IN ('paid', 'shipped', 'completed')
+         ORDER BY o.id DESC, oi.id DESC
+         LIMIT 200",
+        array($auth['id'])
     );
-}
-
-function route_qr_start() {
-    db_run("DELETE FROM login_tickets WHERE expires_at <= NOW() OR status = 'used'");
-    $ticket = bin2hex(random_bytes(16));
-    $secret = bin2hex(random_bytes(24));
-    db_run(
-        'INSERT INTO login_tickets (id, secret_hash, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 5 MINUTE))',
-        array($ticket, hash('sha256', $secret))
-    );
-    $host = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '';
-    $https = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
-    $url = ($https ? 'https' : 'http') . '://' . $host . '/member.html?login=' . $ticket;
-    require_once __DIR__ . '/phpqrcode.php';
-    $rows = QRcode::text($url, false, QR_ECLEVEL_M, 1, 1);
-    $size = count($rows);
-    $scale = 4;
-    $svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' . ($size * $scale) . '" height="' . ($size * $scale) . '" viewBox="0 0 ' . $size . ' ' . $size . '">';
-    $svg .= '<rect width="100%" height="100%" fill="#fff"/>';
-    for ($y = 0; $y < $size; $y++) {
-        $line = $rows[$y];
-        for ($x = 0; $x < strlen($line); $x++) {
-            if ($line[$x] === '1') $svg .= '<rect x="' . $x . '" y="' . $y . '" width="1" height="1" fill="#000"/>';
+    $seen = array();
+    $productIds = array();
+    foreach ($rows as $row) {
+        $key = $row['product_id'] === null ? 'name:' . $row['product_name'] : 'id:' . $row['product_id'];
+        if (isset($seen[$key])) {
+            $seen[$key]['boughtQty'] += (int) $row['quantity'];
+            continue;
         }
+        $seen[$key] = array(
+            'productId' => $row['product_id'] === null ? null : (int) $row['product_id'],
+            'productName' => $row['product_name'],
+            'boughtQty' => (int) $row['quantity'],
+            'boughtAt' => $row['created_at']
+        );
+        if ($row['product_id'] !== null) $productIds[(int) $row['product_id']] = true;
     }
-    $svg .= '</svg>';
-    json_out(array('ticket' => $ticket, 'secret' => $secret, 'svg' => $svg));
+    $products = array();
+    if ($productIds) {
+        $ids = array_keys($productIds);
+        $marks = implode(',', array_fill(0, count($ids), '?'));
+        $found = db_all(
+            'SELECT id, name, slug, price, stock, is_published, colors, main_image FROM products WHERE id IN (' . $marks . ')',
+            $ids
+        );
+        foreach ($found as $product) $products[(int) $product['id']] = $product;
+    }
+    $out = array();
+    foreach ($seen as $item) {
+        $product = $item['productId'] !== null && isset($products[$item['productId']]) ? $products[$item['productId']] : null;
+        $published = $product && (int) $product['is_published'] === 1;
+        $stock = $product ? (int) $product['stock'] : 0;
+        $color = '';
+        if ($product) {
+            foreach (explode('|', (string) $product['colors']) as $part) {
+                $part = trim($part);
+                if ($part !== '' && substr($item['productName'], -strlen('（' . $part . '）')) === '（' . $part . '）') {
+                    $color = $part;
+                    break;
+                }
+            }
+        }
+        $canBuy = $published && $stock > 0;
+        $out[] = array(
+            'productId' => $item['productId'],
+            'name' => $product ? $product['name'] : $item['productName'],
+            'slug' => $product ? $product['slug'] : '',
+            'price' => $product ? (int) $product['price'] : null,
+            'stock' => $stock,
+            'color' => $color,
+            'image' => $product && $product['main_image'] !== '' ? $product['main_image'] : '',
+            'boughtQty' => $item['boughtQty'],
+            'boughtAt' => $item['boughtAt'],
+            'canBuy' => $canBuy,
+            'unavailableReason' => $canBuy ? '' : ($published ? '商品已售完，無法購買' : '商品已下架，無法購買')
+        );
+    }
+    json_out($out);
 }
 
-function same_secret($stored, $secret) {
-    return hash_equals((string) $stored, hash('sha256', (string) $secret));
+function request_origin() {
+    $configured = rtrim((string) config()['public_origin'], '/');
+    if ($configured !== '') return $configured;
+    $host = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '';
+    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https')
+        || (isset($_SERVER['SERVER_PORT']) && (string) $_SERVER['SERVER_PORT'] === '443');
+    if (!$https && $host !== '' && !preg_match('/^(localhost|127\.0\.0\.1)(:\d+)?$/i', $host)) $https = true;
+    return ($https ? 'https' : 'http') . '://' . $host;
 }
 
-function route_qr_poll() {
-    $body = request_body();
-    $ticket = isset($body['ticket']) ? (string) $body['ticket'] : '';
-    $secret = isset($body['secret']) ? (string) $body['secret'] : '';
-    $row = ticket_row($ticket);
-    if (!$row || !same_secret($row['secret_hash'], $secret)) fail(404, '這個登入碼已失效');
-    if ((int) $row['expired']) {
-        db_run('DELETE FROM login_tickets WHERE id = ?', array($ticket));
-        json_out(array('status' => 'expired'));
+function facebook_redirect_uri() {
+    return request_origin() . app_base() . '/api/members/facebook/callback';
+}
+
+function facebook_return($message) {
+    header('Location: ' . app_base() . '/member.html?facebook=' . rawurlencode($message));
+    exit;
+}
+
+function facebook_state() {
+    $body = time() . '-' . bin2hex(random_bytes(8));
+    return $body . '.' . hash_hmac('sha256', $body, config()['jwt_secret']);
+}
+
+function facebook_state_ok($state) {
+    $parts = explode('.', (string) $state, 2);
+    if (count($parts) !== 2 || !preg_match('/^(\d+)-[a-f0-9]{16}$/', $parts[0], $match)) return false;
+    $expected = hash_hmac('sha256', $parts[0], config()['jwt_secret']);
+    if (!hash_equals($expected, $parts[1])) return false;
+    return abs(time() - (int) $match[1]) < 600;
+}
+
+function facebook_get($url) {
+    if (!function_exists('curl_init')) fail(500, '主機沒有啟用 curl，無法使用 Facebook 登入');
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 8);
+    if (defined('CURLOPT_PROTOCOLS') && defined('CURLPROTO_HTTPS')) {
+        curl_setopt($ch, CURLOPT_PROTOCOLS, CURLPROTO_HTTPS);
     }
-    if ($row['status'] === 'pending') json_out(array('status' => 'pending'));
-    if ($row['status'] !== 'confirmed' || !$row['member_id']) fail(410, '這個登入碼已經用過');
-    $claimed = db_run("UPDATE login_tickets SET status = 'used' WHERE id = ? AND status = 'confirmed'", array($ticket));
-    if ($claimed['changes'] !== 1) fail(410, '這個登入碼已經用過');
-    $member = db_one('SELECT id, name, email, phone, line_id, created_at FROM members WHERE id = ?', array($row['member_id']));
-    if (!$member) fail(404, '這個登入碼已失效');
-    json_out(array(
-        'status' => 'confirmed',
-        'token' => jwt_sign(array('typ' => 'member', 'id' => (int) $member['id'])),
-        'member' => map_member($member)
+    $raw = curl_exec($ch);
+    curl_close($ch);
+    if (!is_string($raw) || $raw === '') fail(502, '無法連上 Facebook，請稍後再試');
+    $data = json_decode($raw, true);
+    if (!is_array($data)) fail(502, 'Facebook 回傳的資料無法讀取');
+    return $data;
+}
+
+function route_facebook_start() {
+    $c = config();
+    $appId = isset($c['facebook_app_id']) ? trim((string) $c['facebook_app_id']) : '';
+    $secret = isset($c['facebook_app_secret']) ? trim((string) $c['facebook_app_secret']) : '';
+    if ($appId === '' || $secret === '') facebook_return('請先在 app/config.php 填入 Facebook 應用程式編號與密鑰');
+    $query = http_build_query(array(
+        'client_id' => $appId,
+        'redirect_uri' => facebook_redirect_uri(),
+        'state' => facebook_state(),
+        'scope' => 'email,public_profile',
+        'response_type' => 'code'
+    ));
+    header('Location: https://www.facebook.com/v23.0/dialog/oauth?' . $query);
+    exit;
+}
+
+function login_cookie($name, $value, $path) {
+    setcookie($name, $value, array(
+        'expires' => time() + 180,
+        'path' => $path,
+        'secure' => stripos(request_origin(), 'https://') === 0,
+        'httponly' => false,
+        'samesite' => 'Lax'
     ));
 }
 
-function route_qr_confirm() {
-    $auth = current_member();
-    $body = request_body();
-    $ticket = isset($body['ticket']) ? (string) $body['ticket'] : '';
-    $row = ticket_row($ticket);
-    if (!$row || (int) $row['expired'] || $row['status'] === 'used') fail(410, '這個登入碼已失效');
-    if ($row['status'] === 'confirmed' && (int) $row['member_id'] !== (int) $auth['id']) fail(409, '這個登入碼已經被其他會員確認');
-    db_run("UPDATE login_tickets SET member_id = ?, status = 'confirmed' WHERE id = ? AND status IN ('pending', 'confirmed')", array($auth['id'], $ticket));
-    json_out(array('ok' => true));
+function facebook_finish_login($member) {
+    $token = jwt_sign(array('typ' => 'member', 'id' => (int) $member['id']));
+    $base = app_base();
+    $cookiePath = $base === '' ? '/' : $base;
+    login_cookie('daren-member-token', $token, $cookiePath);
+    login_cookie('daren-member-name', $member['name'], $cookiePath);
+    header('Location: ' . $base . '/profile.html?logged_in=1#token=' . rawurlencode($token) . '&name=' . rawurlencode($member['name']));
+    exit;
+}
+
+function route_facebook_callback() {
+    if (!empty($_GET['error'])) facebook_return('已取消 Facebook 登入');
+    $code = isset($_GET['code']) ? (string) $_GET['code'] : '';
+    $state = isset($_GET['state']) ? (string) $_GET['state'] : '';
+    if ($code === '' || !facebook_state_ok($state)) {
+        facebook_return('Facebook 登入已失效。請在 Facebook 登入的設定加入這個重新導向網址：' . facebook_redirect_uri());
+    }
+    $c = config();
+    $appId = isset($c['facebook_app_id']) ? trim((string) $c['facebook_app_id']) : '';
+    $secret = isset($c['facebook_app_secret']) ? trim((string) $c['facebook_app_secret']) : '';
+    if ($appId === '' || $secret === '') facebook_return('請先在 app/config.php 填入 Facebook 應用程式編號與密鑰');
+    $redirect = facebook_redirect_uri();
+    $tokenUrl = 'https://graph.facebook.com/v23.0/oauth/access_token?' . http_build_query(array(
+        'client_id' => $appId,
+        'redirect_uri' => $redirect,
+        'client_secret' => $secret,
+        'code' => $code
+    ));
+    $token = facebook_get($tokenUrl);
+    if (empty($token['access_token'])) facebook_return('Facebook 沒有完成授權。請確認應用程式的重新導向網址是 ' . $redirect);
+    $profile = facebook_get('https://graph.facebook.com/v23.0/me?' . http_build_query(array(
+        'fields' => 'id,name,email',
+        'access_token' => $token['access_token']
+    )));
+    if (!empty($profile['error'])) facebook_return('Facebook 沒有完成授權，請再試一次');
+    $facebookId = isset($profile['id']) ? (string) $profile['id'] : '';
+    if (!preg_match('/^[0-9]{1,40}$/', $facebookId)) facebook_return('Facebook 沒有提供會員編號');
+    $name = trim(isset($profile['name']) ? (string) $profile['name'] : '');
+    if ($name === '') $name = 'Facebook 會員';
+    if (mb_strlen($name, 'UTF-8') > 80) $name = mb_substr($name, 0, 80, 'UTF-8');
+    $email = isset($profile['email']) ? strtolower(trim((string) $profile['email'])) : '';
+    if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) $email = '';
+    $member = db_one('SELECT id, name, email, phone, line_id, created_at FROM members WHERE facebook_id = ?', array($facebookId));
+    if (!$member && $email !== '') {
+        $member = db_one('SELECT id, name, email, phone, line_id, facebook_id, created_at FROM members WHERE LOWER(email) = LOWER(?)', array($email));
+        if ($member && !empty($member['facebook_id']) && $member['facebook_id'] !== $facebookId) {
+            facebook_return('這個電子郵件已經連結另一個 Facebook 帳號');
+        }
+        if ($member && empty($member['facebook_id'])) {
+            db_run('UPDATE members SET facebook_id = ?, updated_at = ? WHERE id = ? AND facebook_id IS NULL', array($facebookId, timestamp(), $member['id']));
+        }
+    }
+    if (!$member) {
+        $storedEmail = $email !== '' ? $email : ('fb' . $facebookId . '@members.local');
+        $info = db_run(
+            'INSERT INTO members (name, email, password_hash, phone, line_id, facebook_id) VALUES (?, ?, ?, ?, ?, ?)',
+            array($name, $storedEmail, hash_pw(bin2hex(random_bytes(24))), '', '', $facebookId)
+        );
+        $member = db_one('SELECT id, name, email, phone, line_id, created_at FROM members WHERE id = ?', array($info['id']));
+    }
+    facebook_finish_login($member);
 }
 
 function holds_stock($status) {
@@ -467,8 +709,9 @@ function route_order_create() {
         foreach ($lines as $line) $subtotal += $line['lineTotal'];
         $shipping = $subtotal >= (int) $c['free_shipping_threshold'] ? 0 : (int) $c['shipping_fee'];
         $orderNo = next_order_no();
+        $paymentMethod = payment_settings()['online'] ? '' : 'transfer';
         $info = db_run(
-            "INSERT INTO orders (order_no, member_id, buyer_name, buyer_email, buyer_phone, shipping_address, note, status, subtotal, shipping_fee, total, cvs_store_id, cvs_store_name, cvs_address, logistics_subtype) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO orders (order_no, member_id, buyer_name, buyer_email, buyer_phone, shipping_address, note, status, payment_method, subtotal, shipping_fee, total, cvs_store_id, cvs_store_name, cvs_address, logistics_subtype) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)",
             array(
                 $orderNo, $memberId,
                 sanitize_plain(isset($body['buyerName']) ? $body['buyerName'] : '', 40, '收件人', true),
@@ -476,7 +719,7 @@ function route_order_create() {
                 required_phone(isset($body['buyerPhone']) ? $body['buyerPhone'] : ''),
                 $cvs ? $cvs['cvs_address'] : sanitize_plain(isset($body['shippingAddress']) ? $body['shippingAddress'] : '', 200, '收件地址', true),
                 sanitize_plain(isset($body['note']) ? $body['note'] : '', 300, '備註'),
-                $subtotal, $shipping, $subtotal + $shipping,
+                $paymentMethod, $subtotal, $shipping, $subtotal + $shipping,
                 $cvs ? $cvs['cvs_store_id'] : '',
                 $cvs ? $cvs['cvs_store_name'] : '',
                 $cvs ? $cvs['cvs_address'] : '',
@@ -596,15 +839,7 @@ function route_cvs_map() {
         'INSERT INTO cvs_map_sessions (trade_no, token, subtype, expires_at) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 30 MINUTE))',
         array($trade, $token, $subtype)
     );
-    $origin = config()['public_origin'];
-    if ($origin === '') {
-        $host = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '';
-        if (preg_match('/^(localhost|127\.0\.0\.1)(:\d+)?$/i', $host)) {
-            $https = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
-            $origin = ($https ? 'https' : 'http') . '://' . $host;
-        } else fail(400, '請在 app/config.php 設定 public_origin，綠界才能把門市資料傳回這個網站');
-    }
-    $origin = rtrim($origin, '/');
+    $origin = request_origin();
     $c = config();
     json_out(array(
         'action' => $c['ecpay_map_url'],
@@ -1129,10 +1364,164 @@ function route_admin_article_delete($id) {
     json_out(array('ok' => true));
 }
 
+function route_admin_payment_get() {
+    $admin = current_admin();
+    allow_all($admin, array('orders.write'));
+    json_out(payment_settings());
+}
+
+function route_admin_payment_save() {
+    $admin = current_admin();
+    allow_all($admin, array('orders.write'));
+    $body = request_body();
+    $online = !empty($body['online']);
+    $bankName = sanitize_plain(isset($body['bankName']) ? $body['bankName'] : '', 40, '銀行名稱');
+    $payeeName = sanitize_plain(isset($body['payeeName']) ? $body['payeeName'] : '', 40, '收款戶名', !$online);
+    $payeeAccount = sanitize_plain(isset($body['payeeAccount']) ? $body['payeeAccount'] : '', 30, '收款帳號', !$online);
+    if ($payeeAccount !== '' && !preg_match('/^[0-9-]{6,30}$/', $payeeAccount)) fail(400, '收款帳號請填數字或連字號');
+    $settings = array(
+        'online' => $online,
+        'bankName' => $bankName,
+        'payeeName' => $payeeName,
+        'payeeAccount' => $payeeAccount
+    );
+    $json = json_encode($settings, JSON_UNESCAPED_UNICODE);
+    if ($json === false || mb_strlen($json, 'UTF-8') > 255) fail(400, '匯款資訊過長，請縮短後再儲存');
+    $existing = db_one('SELECT meta_key FROM schema_meta WHERE meta_key = ?', array('payment_settings'));
+    if ($existing) {
+        db_run('UPDATE schema_meta SET `value` = ? WHERE meta_key = ?', array($json, 'payment_settings'));
+    } else {
+        db_run('INSERT INTO schema_meta (meta_key, `value`) VALUES (?, ?)', array('payment_settings', $json));
+    }
+    write_audit(array(
+        'adminId' => $admin['id'],
+        'action' => 'payment.settings',
+        'targetType' => 'shop',
+        'targetId' => null,
+        'detail' => array('online' => $online, 'payeeName' => $payeeName),
+        'ip' => request_ip()
+    ));
+    json_out($settings);
+}
+
 function route_admin_orders() {
     $admin = current_admin();
     allow_all($admin, array('orders.read'));
     json_out(list_orders(null));
+}
+
+function refresh_order_totals($orderId) {
+    $sum = db_one('SELECT COALESCE(SUM(line_total), 0) AS subtotal FROM order_items WHERE order_id = ?', array($orderId));
+    $order = db_one('SELECT shipping_fee FROM orders WHERE id = ?', array($orderId));
+    $subtotal = (int) $sum['subtotal'];
+    $shipping = (int) $order['shipping_fee'];
+    db_run(
+        'UPDATE orders SET subtotal = ?, total = ?, updated_at = ? WHERE id = ?',
+        array($subtotal, $subtotal + $shipping, timestamp(), $orderId)
+    );
+}
+
+function route_admin_order_quantities() {
+    $admin = current_admin();
+    allow_all($admin, array('orders.write'));
+    $body = request_body();
+    $items = isset($body['items']) && is_array($body['items']) ? $body['items'] : array();
+    if (!$items) fail(400, '請先勾選要修改數量的訂單');
+    if (count($items) > 100) fail(400, '一次修改的品項過多');
+    db()->beginTransaction();
+    try {
+        $touched = array();
+        foreach ($items as $entry) {
+            if (!is_array($entry)) fail(400, '明細格式不正確');
+            $itemId = required_int(isset($entry['id']) ? $entry['id'] : null, '明細', 1);
+            $quantity = required_int(isset($entry['quantity']) ? $entry['quantity'] : null, '數量', 1, 99);
+            $row = db_one(
+                'SELECT oi.id, oi.order_id, oi.product_id, oi.product_name, oi.unit_price, oi.quantity, o.status, o.order_no
+                 FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE oi.id = ?',
+                array($itemId)
+            );
+            if (!$row) fail(404, '找不到訂單明細');
+            $delta = $quantity - (int) $row['quantity'];
+            if ($delta !== 0 && holds_stock($row['status'])) {
+                if (!$row['product_id']) fail(400, '「' . $row['product_name'] . '」已從商品刪除，無法調整數量');
+                if ($delta > 0) {
+                    $result = db_run(
+                        'UPDATE products SET stock = stock - ?, updated_at = ? WHERE id = ? AND stock >= ?',
+                        array($delta, timestamp(), $row['product_id'], $delta)
+                    );
+                    if ($result['changes'] !== 1) fail(400, '「' . $row['product_name'] . '」庫存不足，無法增加數量');
+                } else {
+                    db_run(
+                        'UPDATE products SET stock = stock + ?, updated_at = ? WHERE id = ?',
+                        array(-$delta, timestamp(), $row['product_id'])
+                    );
+                }
+            }
+            db_run(
+                'UPDATE order_items SET quantity = ?, line_total = ? WHERE id = ?',
+                array($quantity, (int) $row['unit_price'] * $quantity, $itemId)
+            );
+            $touched[(int) $row['order_id']] = $row['order_no'];
+        }
+        foreach ($touched as $orderId => $orderNo) {
+            refresh_order_totals($orderId);
+            write_audit(array(
+                'adminId' => $admin['id'],
+                'action' => 'order.quantity',
+                'targetType' => 'order',
+                'targetId' => $orderId,
+                'detail' => array('orderNo' => $orderNo),
+                'ip' => request_ip()
+            ));
+        }
+        db()->commit();
+    } catch (Exception $error) {
+        if (db()->inTransaction()) db()->rollBack();
+        throw $error;
+    }
+    json_out(array('ok' => true));
+}
+
+function route_admin_orders_delete() {
+    $admin = current_admin();
+    allow_all($admin, array('orders.write'));
+    $body = request_body();
+    $ids = isset($body['ids']) && is_array($body['ids']) ? $body['ids'] : array();
+    if (!$ids) fail(400, '請先勾選要刪除的訂單');
+    if (count($ids) > 100) fail(400, '一次刪除的訂單過多');
+    $clean = array();
+    foreach ($ids as $id) $clean[required_int($id, '訂單', 1)] = true;
+    db()->beginTransaction();
+    try {
+        foreach (array_keys($clean) as $id) {
+            $order = db_one('SELECT id, order_no, status FROM orders WHERE id = ?', array($id));
+            if (!$order) fail(404, '找不到要刪除的訂單');
+            if (holds_stock($order['status'])) {
+                $items = db_all('SELECT product_id, quantity FROM order_items WHERE order_id = ?', array($id));
+                foreach ($items as $item) {
+                    if (!$item['product_id']) continue;
+                    db_run(
+                        'UPDATE products SET stock = stock + ?, updated_at = ? WHERE id = ?',
+                        array((int) $item['quantity'], timestamp(), $item['product_id'])
+                    );
+                }
+            }
+            db_run('DELETE FROM orders WHERE id = ?', array($id));
+            write_audit(array(
+                'adminId' => $admin['id'],
+                'action' => 'order.delete',
+                'targetType' => 'order',
+                'targetId' => $id,
+                'detail' => array('orderNo' => $order['order_no']),
+                'ip' => request_ip()
+            ));
+        }
+        db()->commit();
+    } catch (Exception $error) {
+        if (db()->inTransaction()) db()->rollBack();
+        throw $error;
+    }
+    json_out(array('ok' => true));
 }
 
 function route_admin_tracking($id) {
@@ -1165,6 +1554,85 @@ function route_admin_members() {
     $out = array();
     foreach ($rows as $row) $out[] = map_member($row);
     json_out($out);
+}
+
+function route_admin_member_update($id) {
+    $admin = current_admin();
+    allow_all($admin, array('members.read'));
+    $id = id_param($id);
+    $current = db_one('SELECT id, name, email, phone, line_id FROM members WHERE id = ?', array($id));
+    if (!$current) fail(404, '找不到這位會員');
+    $body = request_body();
+    $name = required_text(isset($body['name']) ? $body['name'] : '', 40, '姓名');
+    $emailInput = trim(isset($body['email']) ? (string) $body['email'] : '');
+    if ($emailInput === '') {
+        $email = substr((string) $current['email'], -14) === '@members.local'
+            ? $current['email']
+            : ('m' . time() . mt_rand(0, 999) . '@members.local');
+    } else {
+        $email = required_email($emailInput);
+    }
+    $phone = canonical_phone(isset($body['phone']) ? $body['phone'] : '', false);
+    $lineInput = trim(isset($body['lineId']) ? (string) $body['lineId'] : '');
+    $line = $lineInput === '' ? '' : line_id($lineInput);
+    $password = trim(isset($body['password']) ? (string) $body['password'] : '');
+    if ($password !== '') $password = read_password($password);
+    $emailTaken = db_one('SELECT id FROM members WHERE LOWER(email) = LOWER(?) AND id <> ?', array($email, $id));
+    if ($emailTaken) fail(409, '這個電子郵件已經註冊');
+    if ($phone !== '' && db_one('SELECT id FROM members WHERE phone = ? AND id <> ?', array($phone, $id))) fail(409, '這個電話號碼已經註冊');
+    if ($line !== '' && db_one('SELECT id FROM members WHERE LOWER(line_id) = LOWER(?) AND id <> ?', array($line, $id))) fail(409, '這個 LINE ID 已經註冊');
+    if ($password !== '') {
+        db_run(
+            'UPDATE members SET name = ?, email = ?, phone = ?, line_id = ?, password_hash = ?, updated_at = ? WHERE id = ?',
+            array($name, $email, $phone, $line, hash_pw($password), timestamp(), $id)
+        );
+    } else {
+        db_run(
+            'UPDATE members SET name = ?, email = ?, phone = ?, line_id = ?, updated_at = ? WHERE id = ?',
+            array($name, $email, $phone, $line, timestamp(), $id)
+        );
+    }
+    write_audit(array(
+        'adminId' => $admin['id'],
+        'action' => 'member.update',
+        'targetType' => 'member',
+        'targetId' => $id,
+        'detail' => array('name' => $name),
+        'ip' => request_ip()
+    ));
+    json_out(map_member(db_one('SELECT id, name, email, phone, line_id, created_at FROM members WHERE id = ?', array($id))));
+}
+
+function route_admin_members_delete() {
+    $admin = current_admin();
+    allow_all($admin, array('members.read'));
+    $body = request_body();
+    $ids = isset($body['ids']) && is_array($body['ids']) ? $body['ids'] : array();
+    if (!$ids) fail(400, '請先勾選要刪除的會員');
+    if (count($ids) > 100) fail(400, '一次刪除的會員過多');
+    $clean = array();
+    foreach ($ids as $id) $clean[required_int($id, '會員', 1)] = true;
+    db()->beginTransaction();
+    try {
+        foreach (array_keys($clean) as $id) {
+            $member = db_one('SELECT id, name FROM members WHERE id = ?', array($id));
+            if (!$member) fail(404, '找不到要刪除的會員');
+            db_run('DELETE FROM members WHERE id = ?', array($id));
+            write_audit(array(
+                'adminId' => $admin['id'],
+                'action' => 'member.delete',
+                'targetType' => 'member',
+                'targetId' => $id,
+                'detail' => array('name' => $member['name']),
+                'ip' => request_ip()
+            ));
+        }
+        db()->commit();
+    } catch (Exception $error) {
+        if (db()->inTransaction()) db()->rollBack();
+        throw $error;
+    }
+    json_out(array('ok' => true));
 }
 
 function route_admin_upload() {
@@ -1460,6 +1928,38 @@ function route_admin_inquiry_update($id) {
     db_run('UPDATE inquiries SET name = ?, phone = ?, email = ?, message = ? WHERE id = ?', array($input['name'], $input['phone'], $input['email'], $input['message'], $id));
     write_audit(array('adminId' => $admin['id'], 'action' => 'inquiry.update', 'targetType' => 'inquiry', 'targetId' => $id, 'detail' => array('name' => $input['name']), 'ip' => request_ip()));
     json_out(map_inquiry(db_one('SELECT id, name, phone, email, message, created_at FROM inquiries WHERE id = ?', array($id))));
+}
+
+function route_admin_inquiries_delete() {
+    $admin = current_admin();
+    allow_all($admin, array('inquiries.write'));
+    $body = request_body();
+    $ids = isset($body['ids']) && is_array($body['ids']) ? $body['ids'] : array();
+    if (!$ids) fail(400, '請先勾選要刪除的聯絡訊息');
+    if (count($ids) > 100) fail(400, '一次刪除的聯絡訊息過多');
+    $clean = array();
+    foreach ($ids as $id) $clean[required_int($id, '聯絡訊息', 1)] = true;
+    db()->beginTransaction();
+    try {
+        foreach (array_keys($clean) as $id) {
+            $inquiry = db_one('SELECT id, name FROM inquiries WHERE id = ?', array($id));
+            if (!$inquiry) fail(404, '找不到要刪除的聯絡訊息');
+            db_run('DELETE FROM inquiries WHERE id = ?', array($id));
+            write_audit(array(
+                'adminId' => $admin['id'],
+                'action' => 'inquiry.delete',
+                'targetType' => 'inquiry',
+                'targetId' => $id,
+                'detail' => array('name' => $inquiry['name']),
+                'ip' => request_ip()
+            ));
+        }
+        db()->commit();
+    } catch (Exception $error) {
+        if (db()->inTransaction()) db()->rollBack();
+        throw $error;
+    }
+    json_out(array('ok' => true));
 }
 
 function route_admin_audit() {

@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>會員個人資料｜大仁哥的珠寶小舖</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="profile">
+  <a class="skip" href="#main">跳到主要內容</a>
+  <header id="site-header"></header>
+  <main class="wrap" id="main">
+    <div class="section-head">
+      <h1>會員個人資料</h1>
+      <button class="btn secondary" id="logout" type="button">登出</button>
+    </div>
+    <p id="profile-alert" class="alert error" hidden></p>
+    <h2>個人資訊</h2>
+    <dl id="member-info" class="info-list"><div class="muted">載入中…</div></dl>
+    <h2>歷史購買紀錄</h2>
+    <p id="purchase-alert" class="alert ok" hidden></p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>日期</th>
+            <th>訂單編號</th>
+            <th>商品</th>
+            <th>數量</th>
+            <th>金額</th>
+            <th>狀態</th>
+            <th>再次選購</th>
+          </tr>
+        </thead>
+        <tbody id="history-body"><tr><td colspan="7">載入中…</td></tr></tbody>
+      </table>
+    </div>
+  </main>
+  <footer id="site-footer"></footer>
+  <script src="js/common.js?v=20261125h"></script>
+  <script src="js/profile.js?v=20261125h"></script>
+</body>
+</html>

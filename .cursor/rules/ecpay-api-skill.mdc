@@ -1,0 +1,6 @@
+---
+description: 綠界 ECPay 串接時先讀官方 API Skill
+alwaysApply: true
+---
+
+處理綠界金流、物流、電子地圖、發票或收據時，先讀取 `.ecpay-skill/SKILL.md`，再依其中指引開啟 `.ecpay-skill/guides/` 與 `.ecpay-skill/references/`。不要憑記憶改 MerchantID、HashKey、地圖網址或 CheckMacValue。

@@ -37,6 +37,7 @@ function fail($status, $message) {
 function json_out($data, $status = 200) {
     http_response_code($status);
     header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
     echo json_encode($data, JSON_UNESCAPED_UNICODE);
     exit;
 }
@@ -533,12 +534,33 @@ function ensure_db() {
     } catch (PDOException $error) {
         $ready = false;
     }
-    if ($ready) return;
+    if (!$ready) {
+        try {
+            install_schema();
+            require_once __DIR__ . '/seed.php';
+            seed_database();
+        } catch (PDOException $error) {
+            fail(500, db_problem_text($error));
+        }
+    }
+    ensure_facebook_column();
+}
+
+function ensure_facebook_column() {
     try {
-        install_schema();
-        require_once __DIR__ . '/seed.php';
-        seed_database();
+        $done = db_one('SELECT `value` FROM schema_meta WHERE meta_key = ?', array('facebook_member'));
+        if ($done) return;
     } catch (PDOException $error) {
-        fail(500, db_problem_text($error));
+        return;
+    }
+    $column = db_one("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'members' AND COLUMN_NAME = 'facebook_id'");
+    if (!$column) {
+        db_exec('ALTER TABLE members ADD COLUMN facebook_id VARCHAR(40) NULL');
+        db_exec('ALTER TABLE members ADD UNIQUE KEY uq_members_facebook (facebook_id)');
+    }
+    try {
+        db_run('INSERT INTO schema_meta (meta_key, `value`) VALUES (?, ?)', array('facebook_member', timestamp()));
+    } catch (PDOException $error) {
+        // 另一個請求已經寫入。
     }
 }
